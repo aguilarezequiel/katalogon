@@ -3,10 +3,12 @@ package UI;
 import Service.ArticuloService;
 import Service.OrdenCompraService;
 import Entities.Articulo;
+import Entities.ModeloInventario;
 import Entities.OrdenCompra;
+import Entities.ArticuloProveedor;
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
-import javax.swing.table.DefaultTableCellRenderer;  // IMPORT AGREGADO
+import javax.swing.table.DefaultTableCellRenderer;
 import java.awt.*;
 import java.util.List;
 
@@ -27,7 +29,7 @@ public class ReporteProductosReponerFrame extends JInternalFrame {
     }
     
     private void initComponents() {
-        setSize(800, 500);
+        setSize(1000, 600);
         setLayout(new BorderLayout());
         
         // Panel superior - Título
@@ -38,8 +40,8 @@ public class ReporteProductosReponerFrame extends JInternalFrame {
         add(panelTitulo, BorderLayout.NORTH);
         
         // Panel central - Tabla
-        String[] columnas = {"ID", "Descripción", "Stock Actual", "Punto Pedido", 
-                            "Stock Seguridad", "Lote Óptimo", "Proveedor Predeterminado"};
+        String[] columnas = {"ID", "Descripción", "Stock Actual", "Modelo", 
+                            "Parámetro Control", "Cantidad a Pedir", "Proveedor Predeterminado", "Estado"};
         modeloTabla = new DefaultTableModel(columnas, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -58,13 +60,16 @@ public class ReporteProductosReponerFrame extends JInternalFrame {
                 
                 if (!isSelected) {
                     try {
-                        int stockActual = (Integer) table.getValueAt(row, 2);
-                        int stockSeguridad = (Integer) table.getValueAt(row, 4);
+                        String estado = (String) table.getValueAt(row, 7);
                         
-                        if (stockActual <= stockSeguridad) {
+                        if ("CRÍTICO - En Stock Seguridad".equals(estado)) {
                             c.setBackground(new Color(255, 200, 200)); // Rojo claro para críticos
-                        } else {
+                        } else if ("ADVERTENCIA - Alcanzó Punto Pedido".equals(estado)) {
                             c.setBackground(new Color(255, 255, 200)); // Amarillo claro para advertencia
+                        } else if ("REVISAR - Tiempo de Intervalo".equals(estado)) {
+                            c.setBackground(new Color(200, 230, 255)); // Azul claro para tiempo fijo
+                        } else {
+                            c.setBackground(Color.WHITE);
                         }
                     } catch (Exception e) {
                         c.setBackground(Color.WHITE);
@@ -85,15 +90,20 @@ public class ReporteProductosReponerFrame extends JInternalFrame {
         JPanel panelLeyenda = new JPanel(new FlowLayout(FlowLayout.LEFT));
         panelLeyenda.add(new JLabel("Leyenda:"));
         
-        JLabel lblAdvertencia = new JLabel("■ Por debajo del punto de pedido");
+        JLabel lblAdvertencia = new JLabel("■ Lote Fijo - Punto de Pedido");
         lblAdvertencia.setOpaque(true);
         lblAdvertencia.setBackground(new Color(255, 255, 200));
         panelLeyenda.add(lblAdvertencia);
         
-        JLabel lblCritico = new JLabel("■ En stock de seguridad");
+        JLabel lblCritico = new JLabel("■ En Stock Seguridad");
         lblCritico.setOpaque(true);
         lblCritico.setBackground(new Color(255, 200, 200));
         panelLeyenda.add(lblCritico);
+        
+        JLabel lblTiempoFijo = new JLabel("■ Tiempo Fijo - Revisar");
+        lblTiempoFijo.setOpaque(true);
+        lblTiempoFijo.setBackground(new Color(200, 230, 255));
+        panelLeyenda.add(lblTiempoFijo);
         
         panelInferior.add(panelLeyenda, BorderLayout.WEST);
         
@@ -125,25 +135,33 @@ public class ReporteProductosReponerFrame extends JInternalFrame {
     private void cargarDatos() {
         try {
             modeloTabla.setRowCount(0);
-            List<Articulo> articulos = articuloService.obtenerArticulosAReponer();
+            List<Articulo> todosArticulos = articuloService.obtenerTodos();
             
-            for (Articulo a : articulos) {
-                String proveedorPred = a.getProveedorPredeterminado() != null ? 
-                    a.getProveedorPredeterminado().getNombreProveedor() : "No asignado";
-                
-                Object[] fila = {
-                    a.getCodArticulo(),
-                    a.getDescripcionArticulo(),
-                    a.getStockActual(),
-                    String.format("%.0f", a.getPuntoPedido()),
-                    a.getStockSeguridad(),
-                    String.format("%.0f", a.getLoteOptimo()),
-                    proveedorPred
-                };
-                modeloTabla.addRow(fila);
+            for (Articulo a : todosArticulos) {
+                if (debeReponer(a)) {
+                    String proveedorPred = a.getProveedorPredeterminado() != null ? 
+                        a.getProveedorPredeterminado().getNombreProveedor() : "Sin asignar";
+                    
+                    String modelo = a.getModeloInventario().getNombreMetodo();
+                    String parametroControl = obtenerParametroControl(a);
+                    Integer cantidadAPedir = calcularCantidadAPedir(a);
+                    String estado = determinarEstado(a);
+                    
+                    Object[] fila = {
+                        a.getCodArticulo(),
+                        a.getDescripcionArticulo(),
+                        a.getStockActual(),
+                        modelo,
+                        parametroControl,
+                        cantidadAPedir,
+                        proveedorPred,
+                        estado
+                    };
+                    modeloTabla.addRow(fila);
+                }
             }
             
-            if (articulos.isEmpty()) {
+            if (modeloTabla.getRowCount() == 0) {
                 JOptionPane.showMessageDialog(this, 
                     "No hay productos que requieran reposición en este momento");
             }
@@ -151,6 +169,80 @@ public class ReporteProductosReponerFrame extends JInternalFrame {
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "Error al cargar datos: " + e.getMessage());
         }
+    }
+    
+    private boolean debeReponer(Articulo articulo) {
+        if (articulo.getModeloInventario() == null) return false;
+        
+        String modelo = articulo.getModeloInventario().getNombreMetodo();
+        
+        if (ModeloInventario.LOTE_FIJO.equals(modelo)) {
+            // Verificar si alcanzó el punto de pedido y no tiene orden activa
+            return articulo.getPuntoPedido() != null && 
+                   articulo.getStockActual() <= articulo.getPuntoPedido() &&
+                   !tieneOrdenActiva(articulo);
+        } else if (ModeloInventario.INTERVALO_FIJO.equals(modelo)) {
+            // Para tiempo fijo, siempre mostrar para que el usuario revise manualmente
+            // En una implementación completa, esto se basaría en fechas
+            return articulo.getTiempoIntervalo() != null && articulo.getTiempoIntervalo() > 0;
+        }
+        
+        return false;
+    }
+    
+    private boolean tieneOrdenActiva(Articulo articulo) {
+        // Verificar si tiene órdenes pendientes o enviadas
+        return articulo.getOrdenesCompra() != null && 
+               articulo.getOrdenesCompra().stream()
+                   .anyMatch(oc -> oc.getEstadoActual() != null && 
+                       ("PENDIENTE".equals(oc.getEstadoActual().getEstado().getNombreEstadoOrdenCompra()) ||
+                        "ENVIADA".equals(oc.getEstadoActual().getEstado().getNombreEstadoOrdenCompra())));
+    }
+    
+    private String obtenerParametroControl(Articulo articulo) {
+        String modelo = articulo.getModeloInventario().getNombreMetodo();
+        
+        if (ModeloInventario.LOTE_FIJO.equals(modelo)) {
+            return "Punto Pedido: " + (articulo.getPuntoPedido() != null ? 
+                String.format("%.0f", articulo.getPuntoPedido()) : "0");
+        } else if (ModeloInventario.INTERVALO_FIJO.equals(modelo)) {
+            return "Intervalo: " + (articulo.getTiempoIntervalo() != null ? 
+                articulo.getTiempoIntervalo() + " días" : "No definido");
+        }
+        
+        return "N/A";
+    }
+    
+    private Integer calcularCantidadAPedir(Articulo articulo) {
+        String modelo = articulo.getModeloInventario().getNombreMetodo();
+        
+        if (ModeloInventario.LOTE_FIJO.equals(modelo)) {
+            // Para lote fijo, usar el lote óptimo
+            return articulo.getLoteOptimo() != null ? 
+                articulo.getLoteOptimo().intValue() : 0;
+        } else if (ModeloInventario.INTERVALO_FIJO.equals(modelo)) {
+            // Para tiempo fijo, calcular cantidad necesaria
+            return articulo.calcularCantidadAPedirTiempoFijo();
+        }
+        
+        return 0;
+    }
+    
+    private String determinarEstado(Articulo articulo) {
+        // Verificar si está en stock de seguridad (más crítico)
+        if (articulo.estaEnStockSeguridad()) {
+            return "CRÍTICO - En Stock Seguridad";
+        }
+        
+        String modelo = articulo.getModeloInventario().getNombreMetodo();
+        
+        if (ModeloInventario.LOTE_FIJO.equals(modelo)) {
+            return "ADVERTENCIA - Alcanzó Punto Pedido";
+        } else if (ModeloInventario.INTERVALO_FIJO.equals(modelo)) {
+            return "REVISAR - Tiempo de Intervalo";
+        }
+        
+        return "REVISAR";
     }
     
     private void generarOrdenCompra() {
@@ -161,6 +253,8 @@ public class ReporteProductosReponerFrame extends JInternalFrame {
         }
         
         Integer idArticulo = (Integer) modeloTabla.getValueAt(filaSeleccionada, 0);
+        Integer cantidadAPedir = (Integer) modeloTabla.getValueAt(filaSeleccionada, 5);
+        
         Articulo articulo = articuloService.obtenerPorId(idArticulo);
         
         if (articulo == null) {
@@ -170,30 +264,51 @@ public class ReporteProductosReponerFrame extends JInternalFrame {
         
         if (articulo.getProveedorPredeterminado() == null) {
             JOptionPane.showMessageDialog(this, 
-                "El artículo no tiene proveedor predeterminado asignado");
+                "El artículo no tiene proveedor predeterminado asignado.\n" +
+                "Debe asignar un proveedor predeterminado antes de generar la orden.");
             return;
         }
         
-        int respuesta = JOptionPane.showConfirmDialog(this,
-            "¿Desea generar una orden de compra para:\n" +
-            articulo.getDescripcionArticulo() + "\n" +
-            "Cantidad: " + String.format("%.0f", articulo.getLoteOptimo()) + " unidades?",
-            "Confirmar Orden de Compra",
-            JOptionPane.YES_NO_OPTION);
+        if (cantidadAPedir <= 0) {
+            JOptionPane.showMessageDialog(this, 
+                "No se puede calcular la cantidad a pedir.\n" +
+                "Verifique que el artículo tenga configurados correctamente los parámetros del modelo.");
+            return;
+        }
+        
+        String modelo = articulo.getModeloInventario().getNombreMetodo();
+        String detalleModelo = ModeloInventario.LOTE_FIJO.equals(modelo) ? 
+            "Lote Óptimo" : "Cantidad calculada para Tiempo Fijo";
+        
+        String mensaje = String.format(
+            "¿Desea generar una orden de compra para:\n\n" +
+            "Artículo: %s\n" +
+            "Modelo: %s\n" +
+            "Cantidad (%s): %d unidades\n" +
+            "Proveedor: %s",
+            articulo.getDescripcionArticulo(),
+            modelo,
+            detalleModelo,
+            cantidadAPedir,
+            articulo.getProveedorPredeterminado().getNombreProveedor()
+        );
+        
+        int respuesta = JOptionPane.showConfirmDialog(this, mensaje, 
+            "Confirmar Orden de Compra", JOptionPane.YES_NO_OPTION);
             
         if (respuesta == JOptionPane.YES_OPTION) {
             try {
                 OrdenCompra orden = new OrdenCompra();
                 orden.setArticulo(articulo);
                 orden.setProveedor(articulo.getProveedorPredeterminado());
-                orden.setCantidad(articulo.getLoteOptimo().intValue());
+                orden.setCantidad(cantidadAPedir);
                 
                 ordenCompraService.crearOrdenCompra(orden);
                 
                 JOptionPane.showMessageDialog(this, 
-                    "Orden de compra generada exitosamente");
+                    "Orden de compra generada exitosamente\nID: " + orden.getCodOC());
                 
-                cargarDatos();
+                cargarDatos(); // Actualizar la lista
                 
             } catch (Exception e) {
                 JOptionPane.showMessageDialog(this, 

@@ -34,16 +34,26 @@ public class ArticuloDAOImpl extends GenericDAOImpl<Articulo> implements Articul
     public List<Articulo> findArticulosAReponer() {
         EntityManager em = getEntityManager();
         try {
+            // Query mejorada para incluir tanto modelo lote fijo como tiempo fijo
             TypedQuery<Articulo> query = em.createQuery(
                 "SELECT a FROM Articulo a " +
                 "WHERE a.activo = true " +
-                "AND a.stockActual <= a.puntoPedido " +
-                "AND NOT EXISTS (" +
-                "    SELECT oc FROM OrdenCompra oc " +
-                "    JOIN oc.estadosHistorico oce " +
-                "    WHERE oc.articulo = a " +
-                "    AND oce.estado.nombreEstadoOrdenCompra IN ('PENDIENTE', 'ENVIADA')" +
-                "    AND oce.fechaHoraFin IS NULL" +
+                "AND (" +
+                    // Modelo Lote Fijo: stock actual <= punto pedido y sin orden activa
+                    "(a.modeloInventario.nombreMetodo = 'LOTE_FIJO' " +
+                    "AND a.stockActual <= a.puntoPedido " +
+                    "AND NOT EXISTS (" +
+                        "SELECT oc FROM OrdenCompra oc " +
+                        "JOIN oc.estadosHistorico oce " +
+                        "WHERE oc.articulo = a " +
+                        "AND oce.estado.nombreEstadoOrdenCompra IN ('PENDIENTE', 'ENVIADA') " +
+                        "AND oce.fechaHoraFin IS NULL" +
+                    ")) " +
+                    "OR " +
+                    // Modelo Tiempo Fijo: artículos que tienen intervalo definido
+                    "(a.modeloInventario.nombreMetodo = 'INTERVALO_FIJO' " +
+                    "AND a.tiempoIntervalo IS NOT NULL " +
+                    "AND a.tiempoIntervalo > 0)" +
                 ")",
                 Articulo.class
             );

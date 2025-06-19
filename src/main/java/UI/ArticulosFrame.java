@@ -22,16 +22,18 @@ public class ArticulosFrame extends JInternalFrame {
     private JSpinner spnStockSeguridad;
     private JSpinner spnDemanda;
     private JSpinner spnCostoAlmacenamiento;
-    private JSpinner spnCostoPedido;
-    private JSpinner spnCostoCompra;
+    private JSpinner spnTiempoIntervalo;
     private JComboBox<Proveedor> cmbProveedorPredeterminado;
     private JComboBox<String> cmbModeloInventario;
     
     // Campos calculados (solo lectura)
     private JTextField txtLoteOptimo;
     private JTextField txtPuntoPedido;
-    private JTextField txtInventarioMaximo;
     private JTextField txtCGI;
+    
+    // Panel dinámico para campos específicos del modelo
+    private JPanel panelModeloEspecifico;
+    private CardLayout cardLayout;
     
     private Articulo articuloSeleccionado;
     
@@ -44,7 +46,7 @@ public class ArticulosFrame extends JInternalFrame {
     }
     
     private void initComponents() {
-        setSize(900, 600);
+        setSize(1000, 700);
         setLayout(new BorderLayout());
         
         // Panel superior - Formulario
@@ -68,7 +70,7 @@ public class ArticulosFrame extends JInternalFrame {
         gbc.insets = new Insets(5, 5, 5, 5);
         gbc.fill = GridBagConstraints.HORIZONTAL;
         
-        // Fila 1
+        // Fila 1 - Descripción
         gbc.gridx = 0; gbc.gridy = 0;
         panel.add(new JLabel("Descripción:"), gbc);
         
@@ -76,7 +78,7 @@ public class ArticulosFrame extends JInternalFrame {
         txtDescripcion = new JTextField(30);
         panel.add(txtDescripcion, gbc);
         
-        // Fila 2
+        // Fila 2 - Stock y Modelo
         gbc.gridx = 0; gbc.gridy = 1; gbc.gridwidth = 1;
         panel.add(new JLabel("Stock Actual:"), gbc);
         
@@ -85,28 +87,29 @@ public class ArticulosFrame extends JInternalFrame {
         panel.add(spnStockActual, gbc);
         
         gbc.gridx = 2;
-        panel.add(new JLabel("Stock Seguridad:"), gbc);
-        
-        gbc.gridx = 3;
-        spnStockSeguridad = new JSpinner(new SpinnerNumberModel(0.0, 0.0, 999999.0, 1.0)); // Cambiar de Integer a Double
-        panel.add(spnStockSeguridad, gbc);
-        
-        // Fila 3
-        gbc.gridx = 0; gbc.gridy = 2;
-        panel.add(new JLabel("Demanda:"), gbc);
-        
-        gbc.gridx = 1;
-        spnDemanda = new JSpinner(new SpinnerNumberModel(0.0, 0.0, 999999.0, 1.0));
-        panel.add(spnDemanda, gbc);
-        
-        gbc.gridx = 2;
         panel.add(new JLabel("Modelo Inventario:"), gbc);
         
         gbc.gridx = 3;
         cmbModeloInventario = new JComboBox<>(new String[]{"LOTE_FIJO", "INTERVALO_FIJO"});
+        cmbModeloInventario.addActionListener(e -> cambiarModeloInventario());
         panel.add(cmbModeloInventario, gbc);
         
-        // Fila 4 - Costos
+        // Fila 3 - Stock Seguridad y Demanda
+        gbc.gridx = 0; gbc.gridy = 2;
+        panel.add(new JLabel("Stock Seguridad:"), gbc);
+        
+        gbc.gridx = 1;
+        spnStockSeguridad = new JSpinner(new SpinnerNumberModel(0.0, 0.0, 999999.0, 1.0));
+        panel.add(spnStockSeguridad, gbc);
+        
+        gbc.gridx = 2;
+        panel.add(new JLabel("Demanda (anual):"), gbc);
+        
+        gbc.gridx = 3;
+        spnDemanda = new JSpinner(new SpinnerNumberModel(0.0, 0.0, 999999.0, 1.0));
+        panel.add(spnDemanda, gbc);
+        
+        // Fila 4 - Costo Almacenamiento y Proveedor
         gbc.gridx = 0; gbc.gridy = 3;
         panel.add(new JLabel("Costo Almacenamiento:"), gbc);
         
@@ -115,60 +118,22 @@ public class ArticulosFrame extends JInternalFrame {
         panel.add(spnCostoAlmacenamiento, gbc);
         
         gbc.gridx = 2;
-        panel.add(new JLabel("Costo Pedido:"), gbc);
-        
-        gbc.gridx = 3;
-        spnCostoPedido = new JSpinner(new SpinnerNumberModel(0.0, 0.0, 999999.0, 0.01));
-        panel.add(spnCostoPedido, gbc);
-        
-        // Fila 5
-        gbc.gridx = 0; gbc.gridy = 4;
-        panel.add(new JLabel("Costo Compra:"), gbc);
-        
-        gbc.gridx = 1;
-        spnCostoCompra = new JSpinner(new SpinnerNumberModel(0.0, 0.0, 999999.0, 0.01));
-        panel.add(spnCostoCompra, gbc);
-        
-        gbc.gridx = 2;
         panel.add(new JLabel("Proveedor Predeterminado:"), gbc);
         
         gbc.gridx = 3;
         cmbProveedorPredeterminado = new JComboBox<>();
         panel.add(cmbProveedorPredeterminado, gbc);
         
+        // Fila 5 - Panel específico del modelo
+        gbc.gridx = 0; gbc.gridy = 4; gbc.gridwidth = 4;
+        panelModeloEspecifico = createPanelModeloEspecifico();
+        panel.add(panelModeloEspecifico, gbc);
+        
         // Fila 6 - Valores calculados
-        gbc.gridx = 0; gbc.gridy = 5;
-        panel.add(new JLabel("Lote Óptimo:"), gbc);
-        
-        gbc.gridx = 1;
-        txtLoteOptimo = new JTextField();
-        txtLoteOptimo.setEditable(false);
-        txtLoteOptimo.setBackground(Color.LIGHT_GRAY);
-        panel.add(txtLoteOptimo, gbc);
-        
-        gbc.gridx = 2;
-        panel.add(new JLabel("Punto Pedido:"), gbc);
-        
-        gbc.gridx = 3;
-        txtPuntoPedido = new JTextField();
-        txtPuntoPedido.setEditable(false);
-        txtPuntoPedido.setBackground(Color.LIGHT_GRAY);
-        panel.add(txtPuntoPedido, gbc);
-        
-        // Fila 7
-        gbc.gridx = 0; gbc.gridy = 6;
-        panel.add(new JLabel("Inventario Máximo:"), gbc);
-        
-        gbc.gridx = 1;
-        txtInventarioMaximo = new JTextField();
-        txtInventarioMaximo.setEditable(false);
-        txtInventarioMaximo.setBackground(Color.LIGHT_GRAY);
-        panel.add(txtInventarioMaximo, gbc);
-        
-        gbc.gridx = 2;
+        gbc.gridx = 0; gbc.gridy = 5; gbc.gridwidth = 1;
         panel.add(new JLabel("CGI:"), gbc);
         
-        gbc.gridx = 3;
+        gbc.gridx = 1;
         txtCGI = new JTextField();
         txtCGI.setEditable(false);
         txtCGI.setBackground(Color.LIGHT_GRAY);
@@ -177,12 +142,50 @@ public class ArticulosFrame extends JInternalFrame {
         return panel;
     }
     
+    private JPanel createPanelModeloEspecifico() {
+        cardLayout = new CardLayout();
+        JPanel panel = new JPanel(cardLayout);
+        panel.setBorder(BorderFactory.createTitledBorder("Parámetros del Modelo"));
+        
+        // Panel para modelo Lote Fijo
+        JPanel panelLoteFijo = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        
+        panelLoteFijo.add(new JLabel("Lote Óptimo:"));
+        txtLoteOptimo = new JTextField(10);
+        txtLoteOptimo.setEditable(false);
+        txtLoteOptimo.setBackground(Color.LIGHT_GRAY);
+        panelLoteFijo.add(txtLoteOptimo);
+        
+        panelLoteFijo.add(new JLabel("Punto Pedido:"));
+        txtPuntoPedido = new JTextField(10);
+        txtPuntoPedido.setEditable(false);
+        txtPuntoPedido.setBackground(Color.LIGHT_GRAY);
+        panelLoteFijo.add(txtPuntoPedido);
+        
+        // Panel para modelo Tiempo Fijo
+        JPanel panelTiempoFijo = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        
+        panelTiempoFijo.add(new JLabel("Intervalo de Tiempo (días):"));
+        spnTiempoIntervalo = new JSpinner(new SpinnerNumberModel(30, 1, 365, 1));
+        panelTiempoFijo.add(spnTiempoIntervalo);
+        
+        panel.add(panelLoteFijo, "LOTE_FIJO");
+        panel.add(panelTiempoFijo, "INTERVALO_FIJO");
+        
+        return panel;
+    }
+    
+    private void cambiarModeloInventario() {
+        String modelo = (String) cmbModeloInventario.getSelectedItem();
+        cardLayout.show(panelModeloEspecifico, modelo);
+    }
+    
     private JPanel createTablePanel() {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBorder(BorderFactory.createTitledBorder("Lista de Artículos"));
         
         String[] columnas = {"ID", "Descripción", "Stock Actual", "Stock Seguridad", 
-                            "Demanda", "Modelo", "Lote Óptimo", "Punto Pedido", "CGI"};
+                            "Demanda", "Modelo", "Proveedor Pred.", "CGI"};
         modeloTabla = new DefaultTableModel(columnas, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -246,6 +249,7 @@ public class ArticulosFrame extends JInternalFrame {
         
         // Cargar artículos en tabla
         actualizarTabla();
+        cambiarModeloInventario(); // Mostrar panel correcto
     }
     
     private void actualizarTabla() {
@@ -254,6 +258,9 @@ public class ArticulosFrame extends JInternalFrame {
             List<Articulo> articulos = articuloService.obtenerTodos();
             
             for (Articulo a : articulos) {
+                String proveedorPred = a.getProveedorPredeterminado() != null ? 
+                    a.getProveedorPredeterminado().getNombreProveedor() : "Sin asignar";
+                
                 Object[] fila = {
                     a.getCodArticulo(),
                     a.getDescripcionArticulo(),
@@ -261,9 +268,8 @@ public class ArticulosFrame extends JInternalFrame {
                     a.getStockSeguridad(),
                     a.getDemanda(),
                     a.getModeloInventario().getNombreMetodo(),
-                    String.format("%.2f", a.getLoteOptimo()),
-                    String.format("%.2f", a.getPuntoPedido()),
-                    String.format("%.2f", a.getCgi())
+                    proveedorPred,
+                    a.getCgi() != null ? String.format("%.2f", a.getCgi()) : "0.00"
                 };
                 modeloTabla.addRow(fila);
             }
@@ -284,16 +290,25 @@ public class ArticulosFrame extends JInternalFrame {
                 spnStockSeguridad.setValue(articuloSeleccionado.getStockSeguridad());
                 spnDemanda.setValue(articuloSeleccionado.getDemanda());
                 spnCostoAlmacenamiento.setValue(articuloSeleccionado.getCostoAlmacenamiento());
-                spnCostoPedido.setValue(articuloSeleccionado.getCostoPedido());
-                spnCostoCompra.setValue(articuloSeleccionado.getCostoCompra());
                 cmbModeloInventario.setSelectedItem(articuloSeleccionado.getModeloInventario().getNombreMetodo());
                 cmbProveedorPredeterminado.setSelectedItem(articuloSeleccionado.getProveedorPredeterminado());
                 
-                // Mostrar valores calculados
-                txtLoteOptimo.setText(String.format("%.2f", articuloSeleccionado.getLoteOptimo()));
-                txtPuntoPedido.setText(String.format("%.2f", articuloSeleccionado.getPuntoPedido()));
-                txtInventarioMaximo.setText(String.format("%.2f", articuloSeleccionado.getInventarioMaximo()));
-                txtCGI.setText(String.format("%.2f", articuloSeleccionado.getCgi()));
+                // Cargar campos específicos del modelo
+                String modelo = articuloSeleccionado.getModeloInventario().getNombreMetodo();
+                if ("LOTE_FIJO".equals(modelo)) {
+                    txtLoteOptimo.setText(articuloSeleccionado.getLoteOptimo() != null ? 
+                        String.format("%.2f", articuloSeleccionado.getLoteOptimo()) : "0.00");
+                    txtPuntoPedido.setText(articuloSeleccionado.getPuntoPedido() != null ? 
+                        String.format("%.2f", articuloSeleccionado.getPuntoPedido()) : "0.00");
+                } else if ("INTERVALO_FIJO".equals(modelo)) {
+                    spnTiempoIntervalo.setValue(articuloSeleccionado.getTiempoIntervalo() != null ? 
+                        articuloSeleccionado.getTiempoIntervalo() : 30);
+                }
+                
+                txtCGI.setText(articuloSeleccionado.getCgi() != null ? 
+                    String.format("%.2f", articuloSeleccionado.getCgi()) : "0.00");
+                
+                cambiarModeloInventario();
             }
         }
     }
@@ -305,15 +320,14 @@ public class ArticulosFrame extends JInternalFrame {
         spnStockSeguridad.setValue(0.0);
         spnDemanda.setValue(0.0);
         spnCostoAlmacenamiento.setValue(0.0);
-        spnCostoPedido.setValue(0.0);
-        spnCostoCompra.setValue(0.0);
+        spnTiempoIntervalo.setValue(30);
         cmbModeloInventario.setSelectedIndex(0);
         cmbProveedorPredeterminado.setSelectedIndex(0);
         txtLoteOptimo.setText("");
         txtPuntoPedido.setText("");
-        txtInventarioMaximo.setText("");
         txtCGI.setText("");
         tablaArticulos.clearSelection();
+        cambiarModeloInventario();
     }
     
     private void guardarArticulo() {
@@ -330,9 +344,6 @@ public class ArticulosFrame extends JInternalFrame {
             articulo.setStockSeguridad((Double) spnStockSeguridad.getValue());
             articulo.setDemanda((Double) spnDemanda.getValue());
             articulo.setCostoAlmacenamiento((Double) spnCostoAlmacenamiento.getValue());
-            articulo.setCostoPedido((Double) spnCostoPedido.getValue());
-            articulo.setCostoCompra((Double) spnCostoCompra.getValue());
-            articulo.setCostoMantenimiento((Double) spnCostoAlmacenamiento.getValue());
             articulo.setProveedorPredeterminado((Proveedor) cmbProveedorPredeterminado.getSelectedItem());
             
             // Crear modelo de inventario
@@ -340,11 +351,15 @@ public class ArticulosFrame extends JInternalFrame {
             modelo.setNombreMetodo((String) cmbModeloInventario.getSelectedItem());
             articulo.setModeloInventario(modelo);
             
+            // Asignar campos específicos del modelo
+            if ("INTERVALO_FIJO".equals(modelo.getNombreMetodo())) {
+                articulo.setTiempoIntervalo((Integer) spnTiempoIntervalo.getValue());
+            }
+            
             if (articuloSeleccionado == null) {
                 articulo.setActivo(true);
                 articulo.setLoteOptimo(0.0);
                 articulo.setPuntoPedido(0.0);
-                articulo.setInventarioMaximo(0.0);
                 articulo.setCgi(0.0);
                 articuloService.crearArticulo(articulo);
                 JOptionPane.showMessageDialog(this, "Artículo creado exitosamente");
@@ -394,22 +409,28 @@ public class ArticulosFrame extends JInternalFrame {
             // Actualizar valores del formulario
             articuloSeleccionado.setDemanda((Double) spnDemanda.getValue());
             articuloSeleccionado.setCostoAlmacenamiento((Double) spnCostoAlmacenamiento.getValue());
-            articuloSeleccionado.setCostoPedido((Double) spnCostoPedido.getValue());
-            articuloSeleccionado.setCostoCompra((Double) spnCostoCompra.getValue());
+            articuloSeleccionado.setStockSeguridad((Double) spnStockSeguridad.getValue());
+            articuloSeleccionado.setProveedorPredeterminado((Proveedor) cmbProveedorPredeterminado.getSelectedItem());
+            
+            String modelo = (String) cmbModeloInventario.getSelectedItem();
+            if ("INTERVALO_FIJO".equals(modelo)) {
+                articuloSeleccionado.setTiempoIntervalo((Integer) spnTiempoIntervalo.getValue());
+            }
             
             // Recalcular
-            if (cmbModeloInventario.getSelectedItem().equals("LOTE_FIJO")) {
+            if ("LOTE_FIJO".equals(modelo)) {
                 articuloSeleccionado.calcularLoteFijo();
+                txtLoteOptimo.setText(articuloSeleccionado.getLoteOptimo() != null ? 
+                    String.format("%.2f", articuloSeleccionado.getLoteOptimo()) : "0.00");
+                txtPuntoPedido.setText(articuloSeleccionado.getPuntoPedido() != null ? 
+                    String.format("%.2f", articuloSeleccionado.getPuntoPedido()) : "0.00");
             } else {
-                articuloSeleccionado.calcularIntervaloFijo();
+                articuloSeleccionado.calcularTiempoFijo();
             }
             articuloSeleccionado.calcularCGI();
             
-            // Mostrar valores calculados
-            txtLoteOptimo.setText(String.format("%.2f", articuloSeleccionado.getLoteOptimo()));
-            txtPuntoPedido.setText(String.format("%.2f", articuloSeleccionado.getPuntoPedido()));
-            txtInventarioMaximo.setText(String.format("%.2f", articuloSeleccionado.getInventarioMaximo()));
-            txtCGI.setText(String.format("%.2f", articuloSeleccionado.getCgi()));
+            txtCGI.setText(articuloSeleccionado.getCgi() != null ? 
+                String.format("%.2f", articuloSeleccionado.getCgi()) : "0.00");
             
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "Error al recalcular: " + e.getMessage());

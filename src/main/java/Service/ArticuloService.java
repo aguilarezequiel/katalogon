@@ -8,6 +8,7 @@ import DAO.impl.GenericDAOImpl;
 import Entities.Articulo;
 import Entities.ModeloInventario;
 import Entities.Proveedor;
+import Entities.ArticuloProveedor;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.TypedQuery;
 import java.time.LocalDateTime;
@@ -37,19 +38,20 @@ public class ArticuloService {
             throw new Exception("El costo de almacenamiento debe ser mayor a 0");
         }
         
-        if (articulo.getCostoPedido() == null || articulo.getCostoPedido() <= 0) {
-            throw new Exception("El costo de pedido debe ser mayor a 0");
-        }
-        
-        if (articulo.getCostoCompra() == null || articulo.getCostoCompra() <= 0) {
-            throw new Exception("El costo de compra debe ser mayor a 0");
+        if (articulo.getStockSeguridad() == null || articulo.getStockSeguridad() < 0) {
+            throw new Exception("El stock de seguridad debe ser mayor o igual a 0");
         }
         
         if (articulo.getModeloInventario() == null) {
             throw new Exception("Debe seleccionar un modelo de inventario");
         }
         
-        // NUEVO: Obtener o crear el modelo de inventario en la base de datos
+        // Validar proveedor predeterminado si se especifica
+        if (articulo.getProveedorPredeterminado() != null) {
+            validarProveedorPredeterminado(articulo);
+        }
+        
+        // Obtener o crear el modelo de inventario en la base de datos
         ModeloInventario modeloPersistente = obtenerOCrearModeloInventario(
             articulo.getModeloInventario().getNombreMetodo()
         );
@@ -67,7 +69,12 @@ public class ArticuloService {
             throw new Exception("El artículo no existe");
         }
         
-        // NUEVO: Asegurar que el modelo de inventario esté persistido
+        // Validar proveedor predeterminado si se especifica
+        if (articulo.getProveedorPredeterminado() != null) {
+            validarProveedorPredeterminado(articulo);
+        }
+        
+        // Asegurar que el modelo de inventario esté persistido
         if (articulo.getModeloInventario() != null) {
             ModeloInventario modeloPersistente = obtenerOCrearModeloInventario(
                 articulo.getModeloInventario().getNombreMetodo()
@@ -79,6 +86,22 @@ public class ArticuloService {
         recalcularValoresModelo(articulo);
         
         return articuloDAO.update(articulo);
+    }
+    
+    private void validarProveedorPredeterminado(Articulo articulo) throws Exception {
+        if (articulo.getListaProveedores() == null || articulo.getListaProveedores().isEmpty()) {
+            throw new Exception("No se puede asignar un proveedor predeterminado. " +
+                "El artículo no tiene proveedores asociados.");
+        }
+        
+        boolean proveedorEncontrado = articulo.getListaProveedores().stream()
+            .anyMatch(ap -> ap.getProveedor().getCodProveedor()
+                .equals(articulo.getProveedorPredeterminado().getCodProveedor()) && ap.getActivo());
+        
+        if (!proveedorEncontrado) {
+            throw new Exception("El proveedor seleccionado como predeterminado no provee este artículo. " +
+                "Debe seleccionar un proveedor que esté asociado al artículo.");
+        }
     }
     
     public void eliminarArticulo(Integer codArticulo) throws Exception {
@@ -141,7 +164,6 @@ public class ArticuloService {
         return articuloDAO.findById(id);
     }
     
-    // MÉTODO NUEVO: Obtener o crear modelo de inventario
     private ModeloInventario obtenerOCrearModeloInventario(String nombre) throws Exception {
         EntityManager em = GenericDAOImpl.emf.createEntityManager();
         try {
@@ -176,7 +198,6 @@ public class ArticuloService {
         }
     }
     
-    // MÉTODO NUEVO: Obtener descripción del modelo
     private String getDescripcionModelo(String nombre) {
         switch (nombre) {
             case ModeloInventario.LOTE_FIJO:
@@ -192,7 +213,7 @@ public class ArticuloService {
         if (articulo.getModeloInventario().getNombreMetodo().equals(ModeloInventario.LOTE_FIJO)) {
             articulo.calcularLoteFijo();
         } else if (articulo.getModeloInventario().getNombreMetodo().equals(ModeloInventario.INTERVALO_FIJO)) {
-            articulo.calcularIntervaloFijo();
+            articulo.calcularTiempoFijo();
         }
         articulo.calcularCGI();
     }
