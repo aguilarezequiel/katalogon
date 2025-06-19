@@ -18,11 +18,11 @@ public class OrdenCompra {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer codOC;
     
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "articulo_id", nullable = false)
     private Articulo articulo;
     
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "proveedor_id", nullable = false)
     private Proveedor proveedor;
     
@@ -36,11 +36,11 @@ public class OrdenCompra {
     
     private LocalDateTime fechaFinalizacion;
     
-    // Relaciones
-    @OneToMany(mappedBy = "ordenCompra", cascade = CascadeType.ALL)
+    // Relaciones - CAMBIO A EAGER PARA EVITAR LAZY INITIALIZATION
+    @OneToMany(mappedBy = "ordenCompra", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
     private List<OrdenCompraEstado> estadosHistorico;
     
-    @OneToMany(mappedBy = "ordenCompra")
+    @OneToMany(mappedBy = "ordenCompra", fetch = FetchType.LAZY)
     private List<OCArticuloProveedor> detalleArticulos;
     
     // Estado actual
@@ -50,6 +50,7 @@ public class OrdenCompra {
             return null;
         }
         return estadosHistorico.stream()
+            .filter(e -> e.getFechaHoraFin() == null)
             .max((e1, e2) -> e1.getFechaHoraInicio().compareTo(e2.getFechaHoraInicio()))
             .orElse(null);
     }

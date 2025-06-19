@@ -26,14 +26,14 @@ public class Proveedor {
     @Column(nullable = false)
     private Boolean activo = true;
     
-    // Relaciones - CAMBIO A EAGER
-    @OneToMany(mappedBy = "proveedor", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
+    // Relaciones - CAMBIO A LAZY PARA EVITAR PROBLEMAS DE RENDIMIENTO
+    @OneToMany(mappedBy = "proveedor", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<ArticuloProveedor> articulosProveedor;
     
-    @OneToMany(mappedBy = "proveedorPredeterminado")
+    @OneToMany(mappedBy = "proveedorPredeterminado", fetch = FetchType.LAZY)
     private List<Articulo> articulosPredeterminados;
     
-    @OneToMany(mappedBy = "proveedor")
+    @OneToMany(mappedBy = "proveedor", fetch = FetchType.LAZY)
     private List<OrdenCompra> ordenesCompra;
     
     // Validaciones

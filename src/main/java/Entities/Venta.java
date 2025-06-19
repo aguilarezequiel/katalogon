@@ -21,7 +21,7 @@ public class Venta {
     @Column(nullable = false)
     private LocalDateTime fechaHoraVenta;
     
-    // Relaciones
+    // Relaciones - CAMBIO A EAGER PARA EVITAR LAZY INITIALIZATION
     @OneToMany(mappedBy = "venta", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
     private List<VentaArticulo> detalleArticulos;
     

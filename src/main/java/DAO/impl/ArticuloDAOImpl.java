@@ -19,7 +19,9 @@ public class ArticuloDAOImpl extends GenericDAOImpl<Articulo> implements Articul
         try {
             TypedQuery<Articulo> query = em.createQuery(
                 "SELECT DISTINCT a FROM Articulo a " +
-                "JOIN a.listaProveedores ap " +
+                "JOIN FETCH a.listaProveedores ap " +
+                "JOIN FETCH a.modeloInventario " +
+                "LEFT JOIN FETCH a.proveedorPredeterminado " +
                 "WHERE ap.proveedor = :proveedor AND a.activo = true",
                 Articulo.class
             );
@@ -36,7 +38,10 @@ public class ArticuloDAOImpl extends GenericDAOImpl<Articulo> implements Articul
         try {
             // Query mejorada para incluir tanto modelo lote fijo como tiempo fijo
             TypedQuery<Articulo> query = em.createQuery(
-                "SELECT a FROM Articulo a " +
+                "SELECT DISTINCT a FROM Articulo a " +
+                "JOIN FETCH a.modeloInventario " +
+                "LEFT JOIN FETCH a.proveedorPredeterminado " +
+                "LEFT JOIN FETCH a.listaProveedores " +
                 "WHERE a.activo = true " +
                 "AND (" +
                     // Modelo Lote Fijo: stock actual <= punto pedido y sin orden activa
@@ -69,6 +74,8 @@ public class ArticuloDAOImpl extends GenericDAOImpl<Articulo> implements Articul
         try {
             TypedQuery<Articulo> query = em.createQuery(
                 "SELECT a FROM Articulo a " +
+                "JOIN FETCH a.modeloInventario " +
+                "LEFT JOIN FETCH a.proveedorPredeterminado " +
                 "WHERE a.activo = true " +
                 "AND a.stockActual <= a.stockSeguridad",
                 Articulo.class
@@ -85,6 +92,8 @@ public class ArticuloDAOImpl extends GenericDAOImpl<Articulo> implements Articul
         try {
             TypedQuery<Articulo> query = em.createQuery(
                 "SELECT a FROM Articulo a " +
+                "JOIN FETCH a.modeloInventario " +
+                "LEFT JOIN FETCH a.proveedorPredeterminado " +
                 "WHERE a.activo = true " +
                 "AND LOWER(a.descripcionArticulo) LIKE LOWER(:descripcion)",
                 Articulo.class
@@ -118,5 +127,46 @@ public class ArticuloDAOImpl extends GenericDAOImpl<Articulo> implements Articul
     @Override
     public boolean tieneStock(Articulo articulo) {
         return articulo.getStockActual() > 0;
+    }
+    
+    @Override
+    public Articulo findById(Integer id) {
+        EntityManager em = getEntityManager();
+        try {
+            TypedQuery<Articulo> query = em.createQuery(
+                "SELECT a FROM Articulo a " +
+                "JOIN FETCH a.modeloInventario " +
+                "LEFT JOIN FETCH a.proveedorPredeterminado " +
+                "LEFT JOIN FETCH a.listaProveedores ap " +
+                "LEFT JOIN FETCH ap.proveedor " +
+                "WHERE a.codArticulo = :id",
+                Articulo.class
+            );
+            query.setParameter("id", id);
+            List<Articulo> resultados = query.getResultList();
+            return resultados.isEmpty() ? null : resultados.get(0);
+        } finally {
+            em.close();
+        }
+    }
+    
+    @Override
+    public List<Articulo> findAllActive() {
+        EntityManager em = getEntityManager();
+        try {
+            TypedQuery<Articulo> query = em.createQuery(
+                "SELECT DISTINCT a FROM Articulo a " +
+                "JOIN FETCH a.modeloInventario " +
+                "LEFT JOIN FETCH a.proveedorPredeterminado " +
+                "LEFT JOIN FETCH a.listaProveedores ap " +
+                "LEFT JOIN FETCH ap.proveedor " +
+                "WHERE a.activo = true " +
+                "ORDER BY a.descripcionArticulo",
+                Articulo.class
+            );
+            return query.getResultList();
+        } finally {
+            em.close();
+        }
     }
 }

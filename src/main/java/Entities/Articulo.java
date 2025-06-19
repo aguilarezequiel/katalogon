@@ -46,22 +46,22 @@ public class Articulo {
     // CGI (Costo de Gestión de Inventario) - calculado
     private Double cgi;
     
-    // Relaciones
-    @ManyToOne
+    // Relaciones - CAMBIO A EAGER PARA EVITAR LAZY INITIALIZATION
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "proveedor_predeterminado_id")
     private Proveedor proveedorPredeterminado;
     
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "modelo_inventario_id", nullable = false)
     private ModeloInventario modeloInventario;
     
     @OneToMany(mappedBy = "articulo", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
     private List<ArticuloProveedor> listaProveedores;
     
-    @OneToMany(mappedBy = "articulo")
+    @OneToMany(mappedBy = "articulo", fetch = FetchType.LAZY)
     private List<VentaArticulo> ventas;
     
-    @OneToMany(mappedBy = "articulo")
+    @OneToMany(mappedBy = "articulo", fetch = FetchType.LAZY)
     private List<OrdenCompra> ordenesCompra;
     
     // Métodos de negocio
@@ -76,18 +76,23 @@ public class Articulo {
                 // Punto de pedido = d * L + SS
                 this.puntoPedido = (demanda / 365 * apPred.getDemoraEntrega()) + 
                     (stockSeguridad != null ? stockSeguridad : 0.0);
+            } else {
+                // Si no hay proveedor predeterminado configurado, poner valores por defecto
+                this.loteOptimo = 0.0;
+                this.puntoPedido = stockSeguridad != null ? stockSeguridad : 0.0;
             }
+        } else {
+            this.loteOptimo = 0.0;
+            this.puntoPedido = stockSeguridad != null ? stockSeguridad : 0.0;
         }
     }
     
     public void calcularTiempoFijo() {
-        if (proveedorPredeterminado != null && demanda != null && demanda > 0) {
-            ArticuloProveedor apPred = obtenerDatosProveedorPredeterminado();
-            if (apPred != null) {
-                // Para modelo de tiempo fijo, el intervalo se define manualmente
-                // El stock de seguridad sigue siendo definido por el usuario
-                // No calculamos inventario máximo automáticamente
-            }
+        // Para modelo de tiempo fijo, el intervalo se define manualmente
+        // El stock de seguridad sigue siendo definido por el usuario
+        // No calculamos inventario máximo automáticamente
+        if (tiempoIntervalo == null || tiempoIntervalo <= 0) {
+            this.tiempoIntervalo = 30; // Valor por defecto
         }
     }
     
@@ -108,23 +113,64 @@ public class Articulo {
     }
     
     public void calcularCGI() {
-        if (proveedorPredeterminado != null && loteOptimo != null && loteOptimo > 0 && 
-            demanda != null && costoAlmacenamiento != null) {
-            
+        try {
+            if (demanda != null && demanda > 0) {
+                String modelo = modeloInventario != null ? modeloInventario.getNombreMetodo() : "";
+                
+                if (ModeloInventario.LOTE_FIJO.equals(modelo)) {
+                    calcularCGILoteFijo();
+                } else if (ModeloInventario.INTERVALO_FIJO.equals(modelo)) {
+                    calcularCGITiempoFijo();
+                } else {
+                    this.cgi = 0.0;
+                }
+            } else {
+                this.cgi = 0.0;
+            }
+        } catch (Exception e) {
+            System.out.println("Error calculando CGI: " + e.getMessage());
+            this.cgi = 0.0;
+        }
+    }
+    
+    private void calcularCGILoteFijo() {
+        if (loteOptimo != null && loteOptimo > 0 && costoAlmacenamiento != null) {
             ArticuloProveedor apPred = obtenerDatosProveedorPredeterminado();
             if (apPred != null && apPred.getCostoPedido() != null && apPred.getPrecioUnitario() != null) {
                 double costoOrdenar = (demanda / loteOptimo) * apPred.getCostoPedido();
                 double costoMantener = (loteOptimo / 2) * costoAlmacenamiento;
                 double costoAdquisicion = demanda * apPred.getPrecioUnitario();
                 this.cgi = costoOrdenar + costoMantener + costoAdquisicion;
+            } else {
+                // CGI básico sin proveedor
+                this.cgi = demanda * costoAlmacenamiento;
             }
+        } else {
+            this.cgi = 0.0;
+        }
+    }
+    
+    private void calcularCGITiempoFijo() {
+        // Para tiempo fijo, calcular CGI basado en el intervalo
+        ArticuloProveedor apPred = obtenerDatosProveedorPredeterminado();
+        if (apPred != null && apPred.getPrecioUnitario() != null && costoAlmacenamiento != null) {
+            // CGI simplificado para tiempo fijo
+            double costoPedidoAnual = apPred.getCostoPedido() * (365.0 / (tiempoIntervalo != null ? tiempoIntervalo : 30));
+            double costoMantenimiento = stockSeguridad * costoAlmacenamiento;
+            double costoAdquisicion = demanda * apPred.getPrecioUnitario();
+            this.cgi = costoPedidoAnual + costoMantenimiento + costoAdquisicion;
+        } else {
+            // CGI básico
+            this.cgi = demanda != null ? demanda * (costoAlmacenamiento != null ? costoAlmacenamiento : 1.0) : 0.0;
         }
     }
     
     private ArticuloProveedor obtenerDatosProveedorPredeterminado() {
         if (proveedorPredeterminado != null && listaProveedores != null) {
             return listaProveedores.stream()
-                .filter(ap -> ap.getProveedor().getCodProveedor().equals(proveedorPredeterminado.getCodProveedor()) 
+                .filter(ap -> ap.getProveedor() != null && 
+                         ap.getProveedor().getCodProveedor() != null &&
+                         ap.getProveedor().getCodProveedor().equals(proveedorPredeterminado.getCodProveedor()) 
                          && ap.getActivo())
                 .findFirst()
                 .orElse(null);

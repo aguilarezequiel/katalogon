@@ -72,12 +72,69 @@ public class ProveedorDAOImpl extends GenericDAOImpl<Proveedor> implements Prove
         try {
             TypedQuery<Articulo> query = em.createQuery(
                 "SELECT DISTINCT ap.articulo FROM ArticuloProveedor ap " +
+                "JOIN FETCH ap.articulo a " +
+                "JOIN FETCH a.modeloInventario " +
+                "LEFT JOIN FETCH a.proveedorPredeterminado " +
                 "WHERE ap.proveedor = :proveedor " +
                 "AND ap.activo = true " +
                 "AND ap.articulo.activo = true",
                 Articulo.class
             );
             query.setParameter("proveedor", proveedor);
+            return query.getResultList();
+        } finally {
+            em.close();
+        }
+    }
+    
+    @Override
+    public Proveedor findById(Integer id) {
+        EntityManager em = getEntityManager();
+        try {
+            TypedQuery<Proveedor> query = em.createQuery(
+                "SELECT p FROM Proveedor p " +
+                "LEFT JOIN FETCH p.articulosProveedor ap " +
+                "LEFT JOIN FETCH ap.articulo " +
+                "WHERE p.codProveedor = :id",
+                Proveedor.class
+            );
+            query.setParameter("id", id);
+            List<Proveedor> resultados = query.getResultList();
+            return resultados.isEmpty() ? null : resultados.get(0);
+        } finally {
+            em.close();
+        }
+    }
+    
+    @Override
+    public List<Proveedor> findAllActive() {
+        EntityManager em = getEntityManager();
+        try {
+            TypedQuery<Proveedor> query = em.createQuery(
+                "SELECT DISTINCT p FROM Proveedor p " +
+                "LEFT JOIN FETCH p.articulosProveedor ap " +
+                "LEFT JOIN FETCH ap.articulo " +
+                "WHERE p.activo = true " +
+                "ORDER BY p.nombreProveedor",
+                Proveedor.class
+            );
+            return query.getResultList();
+        } finally {
+            em.close();
+        }
+    }
+    
+    @Override
+    public List<Proveedor> findAll() {
+        EntityManager em = getEntityManager();
+        try {
+            TypedQuery<Proveedor> query = em.createQuery(
+                "SELECT DISTINCT p FROM Proveedor p " +
+                "LEFT JOIN FETCH p.articulosProveedor ap " +
+                "LEFT JOIN FETCH ap.articulo " +
+                "ORDER BY p.nombreProveedor",
+                Proveedor.class
+            );
             return query.getResultList();
         } finally {
             em.close();

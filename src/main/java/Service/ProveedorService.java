@@ -4,11 +4,14 @@ import DAO.ProveedorDAO;
 import DAO.ArticuloDAO;
 import DAO.impl.ProveedorDAOImpl;
 import DAO.impl.ArticuloDAOImpl;
+import DAO.impl.GenericDAOImpl;
 import Entities.Proveedor;
 import Entities.Articulo;
 import Entities.ArticuloProveedor;
+import jakarta.persistence.EntityManager;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.ArrayList;
 
 public class ProveedorService {
     
@@ -43,7 +46,54 @@ public class ProveedorService {
             }
         }
         
-        return proveedorDAO.save(proveedor);
+        // Guardar usando transacción manual para manejar las asociaciones
+        EntityManager em = GenericDAOImpl.emf.createEntityManager();
+        try {
+            em.getTransaction().begin();
+            
+            // Establecer valores por defecto
+            proveedor.setActivo(true);
+            
+            // Guardar el proveedor primero
+            em.persist(proveedor);
+            em.flush(); // Forzar el INSERT para obtener el ID
+            
+            // Procesar las asociaciones con artículos
+            List<ArticuloProveedor> asociacionesGuardadas = new ArrayList<>();
+            for (ArticuloProveedor ap : proveedor.getArticulosProveedor()) {
+                // Recargar el artículo en el contexto actual
+                Articulo articulo = em.find(Articulo.class, ap.getArticulo().getCodArticulo());
+                if (articulo == null) {
+                    throw new Exception("Artículo no encontrado: " + ap.getArticulo().getDescripcionArticulo());
+                }
+                
+                // Crear nueva asociación
+                ArticuloProveedor nuevaAsociacion = new ArticuloProveedor();
+                nuevaAsociacion.setArticulo(articulo);
+                nuevaAsociacion.setProveedor(proveedor);
+                nuevaAsociacion.setPrecioUnitario(ap.getPrecioUnitario());
+                nuevaAsociacion.setDemoraEntrega(ap.getDemoraEntrega());
+                nuevaAsociacion.setCostoPedido(ap.getCostoPedido());
+                nuevaAsociacion.setActivo(true);
+                
+                em.persist(nuevaAsociacion);
+                asociacionesGuardadas.add(nuevaAsociacion);
+            }
+            
+            // Actualizar la lista en el proveedor
+            proveedor.setArticulosProveedor(asociacionesGuardadas);
+            
+            em.getTransaction().commit();
+            return proveedor;
+            
+        } catch (Exception e) {
+            if (em.getTransaction().isActive()) {
+                em.getTransaction().rollback();
+            }
+            throw new Exception("Error al crear proveedor: " + e.getMessage());
+        } finally {
+            em.close();
+        }
     }
     
     public Proveedor actualizarProveedor(Proveedor proveedor) throws Exception {
@@ -52,7 +102,52 @@ public class ProveedorService {
             throw new Exception("El proveedor no existe");
         }
         
-        return proveedorDAO.update(proveedor);
+        // Validaciones básicas
+        if (proveedor.getNombreProveedor() == null || proveedor.getNombreProveedor().trim().isEmpty()) {
+            throw new Exception("El nombre del proveedor es requerido");
+        }
+        
+        EntityManager em = GenericDAOImpl.emf.createEntityManager();
+        try {
+            em.getTransaction().begin();
+            
+            // Actualizar datos básicos del proveedor
+            Proveedor proveedorManaged = em.find(Proveedor.class, proveedor.getCodProveedor());
+            proveedorManaged.setNombreProveedor(proveedor.getNombreProveedor());
+            
+            // Si hay nuevas asociaciones, procesarlas
+            if (proveedor.getArticulosProveedor() != null && !proveedor.getArticulosProveedor().isEmpty()) {
+                for (ArticuloProveedor ap : proveedor.getArticulosProveedor()) {
+                    if (ap.getId() == null) { // Nueva asociación
+                        Articulo articulo = em.find(Articulo.class, ap.getArticulo().getCodArticulo());
+                        if (articulo != null) {
+                            ArticuloProveedor nuevaAsociacion = new ArticuloProveedor();
+                            nuevaAsociacion.setArticulo(articulo);
+                            nuevaAsociacion.setProveedor(proveedorManaged);
+                            nuevaAsociacion.setPrecioUnitario(ap.getPrecioUnitario());
+                            nuevaAsociacion.setDemoraEntrega(ap.getDemoraEntrega());
+                            nuevaAsociacion.setCostoPedido(ap.getCostoPedido());
+                            nuevaAsociacion.setActivo(true);
+                            
+                            em.persist(nuevaAsociacion);
+                        }
+                    }
+                }
+            }
+            
+            em.getTransaction().commit();
+            
+            // Recargar el proveedor con todas sus asociaciones
+            return proveedorDAO.findById(proveedor.getCodProveedor());
+            
+        } catch (Exception e) {
+            if (em.getTransaction().isActive()) {
+                em.getTransaction().rollback();
+            }
+            throw new Exception("Error al actualizar proveedor: " + e.getMessage());
+        } finally {
+            em.close();
+        }
     }
     
     public void eliminarProveedor(Integer codProveedor) throws Exception {
@@ -100,10 +195,37 @@ public class ProveedorService {
             throw new Exception("El costo de pedido debe ser mayor a 0");
         }
         
-        articuloProveedor.setProveedor(proveedor);
-        proveedor.getArticulosProveedor().add(articuloProveedor);
-        
-        proveedorDAO.update(proveedor);
+        EntityManager em = GenericDAOImpl.emf.createEntityManager();
+        try {
+            em.getTransaction().begin();
+            
+            Proveedor proveedorManaged = em.find(Proveedor.class, proveedorId);
+            Articulo articuloManaged = em.find(Articulo.class, articuloProveedor.getArticulo().getCodArticulo());
+            
+            if (proveedorManaged == null || articuloManaged == null) {
+                throw new Exception("Proveedor o artículo no encontrado");
+            }
+            
+            // Crear la nueva asociación
+            ArticuloProveedor nuevaAsociacion = new ArticuloProveedor();
+            nuevaAsociacion.setArticulo(articuloManaged);
+            nuevaAsociacion.setProveedor(proveedorManaged);
+            nuevaAsociacion.setPrecioUnitario(articuloProveedor.getPrecioUnitario());
+            nuevaAsociacion.setDemoraEntrega(articuloProveedor.getDemoraEntrega());
+            nuevaAsociacion.setCostoPedido(articuloProveedor.getCostoPedido());
+            nuevaAsociacion.setActivo(true);
+            
+            em.persist(nuevaAsociacion);
+            em.getTransaction().commit();
+            
+        } catch (Exception e) {
+            if (em.getTransaction().isActive()) {
+                em.getTransaction().rollback();
+            }
+            throw new Exception("Error al asociar artículo: " + e.getMessage());
+        } finally {
+            em.close();
+        }
     }
     
     public List<Proveedor> obtenerTodos() {

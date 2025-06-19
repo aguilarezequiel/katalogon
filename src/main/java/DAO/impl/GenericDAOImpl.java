@@ -27,9 +27,13 @@ public abstract class GenericDAOImpl<T> implements GenericDAO<T> {
             em.getTransaction().begin();
             em.persist(entity);
             em.getTransaction().commit();
+            // Refrescar la entidad para obtener las relaciones cargadas
+            em.refresh(entity);
             return entity;
         } catch (Exception e) {
-            em.getTransaction().rollback();
+            if (em.getTransaction().isActive()) {
+                em.getTransaction().rollback();
+            }
             throw e;
         } finally {
             em.close();
@@ -45,7 +49,9 @@ public abstract class GenericDAOImpl<T> implements GenericDAO<T> {
             em.getTransaction().commit();
             return merged;
         } catch (Exception e) {
-            em.getTransaction().rollback();
+            if (em.getTransaction().isActive()) {
+                em.getTransaction().rollback();
+            }
             throw e;
         } finally {
             em.close();
@@ -57,10 +63,13 @@ public abstract class GenericDAOImpl<T> implements GenericDAO<T> {
         EntityManager em = getEntityManager();
         try {
             em.getTransaction().begin();
-            em.remove(em.merge(entity));
+            T managedEntity = em.merge(entity);
+            em.remove(managedEntity);
             em.getTransaction().commit();
         } catch (Exception e) {
-            em.getTransaction().rollback();
+            if (em.getTransaction().isActive()) {
+                em.getTransaction().rollback();
+            }
             throw e;
         } finally {
             em.close();

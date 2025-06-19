@@ -282,6 +282,8 @@ public class ArticulosFrame extends JInternalFrame {
         int filaSeleccionada = tablaArticulos.getSelectedRow();
         if (filaSeleccionada >= 0) {
             Integer id = (Integer) modeloTabla.getValueAt(filaSeleccionada, 0);
+            
+            // CAMBIO IMPORTANTE: Recargar completamente el artículo
             articuloSeleccionado = articuloService.obtenerPorId(id);
             
             if (articuloSeleccionado != null) {
@@ -291,7 +293,21 @@ public class ArticulosFrame extends JInternalFrame {
                 spnDemanda.setValue(articuloSeleccionado.getDemanda());
                 spnCostoAlmacenamiento.setValue(articuloSeleccionado.getCostoAlmacenamiento());
                 cmbModeloInventario.setSelectedItem(articuloSeleccionado.getModeloInventario().getNombreMetodo());
-                cmbProveedorPredeterminado.setSelectedItem(articuloSeleccionado.getProveedorPredeterminado());
+                
+                // CAMBIO IMPORTANTE: Buscar y seleccionar el proveedor predeterminado en el combo
+                if (articuloSeleccionado.getProveedorPredeterminado() != null) {
+                    // Buscar el proveedor en el combo por ID
+                    for (int i = 0; i < cmbProveedorPredeterminado.getItemCount(); i++) {
+                        Proveedor item = cmbProveedorPredeterminado.getItemAt(i);
+                        if (item != null && 
+                            item.getCodProveedor().equals(articuloSeleccionado.getProveedorPredeterminado().getCodProveedor())) {
+                            cmbProveedorPredeterminado.setSelectedIndex(i);
+                            break;
+                        }
+                    }
+                } else {
+                    cmbProveedorPredeterminado.setSelectedIndex(0); // Seleccionar la opción vacía
+                }
                 
                 // Cargar campos específicos del modelo
                 String modelo = articuloSeleccionado.getModeloInventario().getNombreMetodo();
@@ -344,7 +360,9 @@ public class ArticulosFrame extends JInternalFrame {
             articulo.setStockSeguridad((Double) spnStockSeguridad.getValue());
             articulo.setDemanda((Double) spnDemanda.getValue());
             articulo.setCostoAlmacenamiento((Double) spnCostoAlmacenamiento.getValue());
-            articulo.setProveedorPredeterminado((Proveedor) cmbProveedorPredeterminado.getSelectedItem());
+            
+            // Obtener proveedor seleccionado
+            Proveedor proveedorSeleccionado = (Proveedor) cmbProveedorPredeterminado.getSelectedItem();
             
             // Crear modelo de inventario
             ModeloInventario modelo = new ModeloInventario();
@@ -357,13 +375,37 @@ public class ArticulosFrame extends JInternalFrame {
             }
             
             if (articuloSeleccionado == null) {
+                // Artículo nuevo - NO asignar proveedor predeterminado aún
                 articulo.setActivo(true);
                 articulo.setLoteOptimo(0.0);
                 articulo.setPuntoPedido(0.0);
                 articulo.setCgi(0.0);
-                articuloService.crearArticulo(articulo);
+                
+                // Guardar primero el artículo sin proveedor predeterminado
+                Articulo articuloGuardado = articuloService.crearArticulo(articulo);
+                
+                // DESPUÉS manejar el proveedor predeterminado si fue seleccionado
+                if (proveedorSeleccionado != null) {
+                    manejarProveedorDespuesDelGuardado(articuloGuardado, proveedorSeleccionado);
+                }
+                
                 JOptionPane.showMessageDialog(this, "Artículo creado exitosamente");
             } else {
+                // Artículo existente - manejar normalmente
+                if (proveedorSeleccionado != null) {
+                    if (manejarProveedorPredeterminado(articulo, proveedorSeleccionado)) {
+                        articulo.setProveedorPredeterminado(proveedorSeleccionado);
+                    } else {
+                        // CAMBIO: Si no se puede asociar, mantener el proveedor actual o null
+                        articulo.setProveedorPredeterminado(null);
+                        // IMPORTANTE: Recargar combo para mostrar el estado actual
+                        cargarDatos();
+                        return; // Salir sin actualizar para que el usuario vea el estado actual
+                    }
+                } else {
+                    articulo.setProveedorPredeterminado(null);
+                }
+                
                 articuloService.actualizarArticulo(articulo);
                 JOptionPane.showMessageDialog(this, "Artículo actualizado exitosamente");
             }
@@ -373,6 +415,101 @@ public class ArticulosFrame extends JInternalFrame {
             
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "Error al guardar: " + e.getMessage());
+            // Recargar datos para mostrar el estado actual
+            cargarDatos();
+        }
+    }
+    
+    // Nuevo método para manejar proveedor después del guardado
+    private void manejarProveedorDespuesDelGuardado(Articulo articuloGuardado, Proveedor proveedor) {
+        int respuesta = JOptionPane.showConfirmDialog(this,
+            "¿Desea asociar el proveedor " + proveedor.getNombreProveedor() + 
+            " a este artículo y configurarlo como predeterminado?",
+            "Asociar Proveedor",
+            JOptionPane.YES_NO_OPTION);
+        
+        if (respuesta == JOptionPane.YES_OPTION) {
+            ArticuloProveedorDialog dialog = new ArticuloProveedorDialog(
+                (Frame) SwingUtilities.getWindowAncestor(this), articuloGuardado);
+            dialog.setVisible(true);
+            
+            if (dialog.isAceptado()) {
+                try {
+                    ArticuloProveedor ap = dialog.getArticuloProveedor();
+                    
+                    // Crear la asociación
+                    articuloService.crearAsociacionArticuloProveedor(
+                        articuloGuardado, proveedor, 
+                        ap.getPrecioUnitario(), 
+                        ap.getDemoraEntrega(), 
+                        ap.getCostoPedido()
+                    );
+                    
+                    // Asignar como proveedor predeterminado
+                    articuloGuardado.setProveedorPredeterminado(proveedor);
+                    articuloService.actualizarArticulo(articuloGuardado);
+                    
+                    JOptionPane.showMessageDialog(this, "Proveedor asociado y configurado como predeterminado");
+                    
+                } catch (Exception e) {
+                    JOptionPane.showMessageDialog(this, "Error al asociar proveedor: " + e.getMessage());
+                }
+            }
+        }
+    }
+    
+    private boolean manejarProveedorPredeterminado(Articulo articulo, Proveedor proveedor) {
+        // Solo para artículos ya guardados
+        if (articulo.getCodArticulo() == null) {
+            return false;
+        }
+        
+        try {
+            // CAMBIO IMPORTANTE: Recargar el artículo con las asociaciones desde la base de datos
+            Articulo articuloActualizado = articuloService.obtenerPorId(articulo.getCodArticulo());
+            
+            // Verificar si ya existe la asociación usando el artículo actualizado
+            if (articuloActualizado.getListaProveedores() != null) {
+                boolean asociacionExiste = articuloActualizado.getListaProveedores().stream()
+                    .anyMatch(ap -> ap.getProveedor().getCodProveedor().equals(proveedor.getCodProveedor()) && ap.getActivo());
+                
+                if (asociacionExiste) {
+                    return true;
+                }
+            }
+            
+            // Si no existe la asociación, preguntar si crear
+            int respuesta = JOptionPane.showConfirmDialog(this,
+                "El proveedor seleccionado no está asociado a este artículo.\n" +
+                "¿Desea crear la asociación artículo-proveedor ahora?",
+                "Crear Asociación",
+                JOptionPane.YES_NO_OPTION);
+            
+            if (respuesta == JOptionPane.YES_OPTION) {
+                ArticuloProveedorDialog dialog = new ArticuloProveedorDialog(
+                    (Frame) SwingUtilities.getWindowAncestor(this), articulo);
+                dialog.setVisible(true);
+                
+                if (dialog.isAceptado()) {
+                    ArticuloProveedor ap = dialog.getArticuloProveedor();
+                    
+                    articuloService.crearAsociacionArticuloProveedor(
+                        articulo, proveedor, 
+                        ap.getPrecioUnitario(), 
+                        ap.getDemoraEntrega(), 
+                        ap.getCostoPedido()
+                    );
+                    
+                    JOptionPane.showMessageDialog(this, "Asociación creada exitosamente");
+                    return true;
+                }
+            }
+            
+            return false;
+            
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Error al verificar asociaciones: " + e.getMessage());
+            return false;
         }
     }
     
@@ -406,7 +543,7 @@ public class ArticulosFrame extends JInternalFrame {
                 return;
             }
             
-            // Actualizar valores del formulario
+            // Actualizar valores del artículo desde el formulario
             articuloSeleccionado.setDemanda((Double) spnDemanda.getValue());
             articuloSeleccionado.setCostoAlmacenamiento((Double) spnCostoAlmacenamiento.getValue());
             articuloSeleccionado.setStockSeguridad((Double) spnStockSeguridad.getValue());
@@ -417,20 +554,27 @@ public class ArticulosFrame extends JInternalFrame {
                 articuloSeleccionado.setTiempoIntervalo((Integer) spnTiempoIntervalo.getValue());
             }
             
-            // Recalcular
+            // Llamar al servicio para recalcular
+            articuloService.recalcularArticulo(articuloSeleccionado.getCodArticulo());
+            
+            // Recargar el artículo actualizado
+            articuloSeleccionado = articuloService.obtenerPorId(articuloSeleccionado.getCodArticulo());
+            
+            // Actualizar campos calculados en la UI
             if ("LOTE_FIJO".equals(modelo)) {
-                articuloSeleccionado.calcularLoteFijo();
                 txtLoteOptimo.setText(articuloSeleccionado.getLoteOptimo() != null ? 
                     String.format("%.2f", articuloSeleccionado.getLoteOptimo()) : "0.00");
                 txtPuntoPedido.setText(articuloSeleccionado.getPuntoPedido() != null ? 
                     String.format("%.2f", articuloSeleccionado.getPuntoPedido()) : "0.00");
-            } else {
-                articuloSeleccionado.calcularTiempoFijo();
             }
-            articuloSeleccionado.calcularCGI();
             
             txtCGI.setText(articuloSeleccionado.getCgi() != null ? 
                 String.format("%.2f", articuloSeleccionado.getCgi()) : "0.00");
+            
+            // Actualizar tabla
+            actualizarTabla();
+            
+            JOptionPane.showMessageDialog(this, "Valores recalculados exitosamente");
             
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "Error al recalcular: " + e.getMessage());

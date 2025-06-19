@@ -2,8 +2,10 @@ package Service;
 
 import DAO.ArticuloDAO;
 import DAO.OrdenCompraDAO;
+import DAO.ProveedorDAO;
 import DAO.impl.ArticuloDAOImpl;
 import DAO.impl.OrdenCompraDAOImpl;
+import DAO.impl.ProveedorDAOImpl;
 import DAO.impl.GenericDAOImpl;
 import Entities.Articulo;
 import Entities.ModeloInventario;
@@ -18,10 +20,12 @@ public class ArticuloService {
     
     private ArticuloDAO articuloDAO;
     private OrdenCompraDAO ordenCompraDAO;
+    private ProveedorDAO proveedorDAO;
     
     public ArticuloService() {
         this.articuloDAO = new ArticuloDAOImpl();
         this.ordenCompraDAO = new OrdenCompraDAOImpl();
+        this.proveedorDAO = new ProveedorDAOImpl();
     }
     
     public Articulo crearArticulo(Articulo articulo) throws Exception {
@@ -46,20 +50,20 @@ public class ArticuloService {
             throw new Exception("Debe seleccionar un modelo de inventario");
         }
         
-        // Validar proveedor predeterminado si se especifica
-        if (articulo.getProveedorPredeterminado() != null) {
-            validarProveedorPredeterminado(articulo);
-        }
-        
         // Obtener o crear el modelo de inventario en la base de datos
         ModeloInventario modeloPersistente = obtenerOCrearModeloInventario(
             articulo.getModeloInventario().getNombreMetodo()
         );
         articulo.setModeloInventario(modeloPersistente);
         
+        // IMPORTANTE: No asignar proveedor predeterminado en creación
+        // Se manejará después del guardado para evitar problemas con entidades transitorias
+        articulo.setProveedorPredeterminado(null);
+        
         // Calcular valores según modelo
         recalcularValoresModelo(articulo);
         
+        // Guardar el artículo
         return articuloDAO.save(articulo);
     }
     
@@ -69,17 +73,17 @@ public class ArticuloService {
             throw new Exception("El artículo no existe");
         }
         
-        // Validar proveedor predeterminado si se especifica
-        if (articulo.getProveedorPredeterminado() != null) {
-            validarProveedorPredeterminado(articulo);
-        }
-        
         // Asegurar que el modelo de inventario esté persistido
         if (articulo.getModeloInventario() != null) {
             ModeloInventario modeloPersistente = obtenerOCrearModeloInventario(
                 articulo.getModeloInventario().getNombreMetodo()
             );
             articulo.setModeloInventario(modeloPersistente);
+        }
+        
+        // Validar proveedor predeterminado si se especifica
+        if (articulo.getProveedorPredeterminado() != null) {
+            validarProveedorPredeterminado(articulo);
         }
         
         // Recalcular valores si cambiaron las variables
@@ -101,6 +105,78 @@ public class ArticuloService {
         if (!proveedorEncontrado) {
             throw new Exception("El proveedor seleccionado como predeterminado no provee este artículo. " +
                 "Debe seleccionar un proveedor que esté asociado al artículo.");
+        }
+    }
+    
+    public ArticuloProveedor crearAsociacionArticuloProveedor(Articulo articulo, Proveedor proveedor, 
+            Double precioUnitario, Integer demoraEntrega, Double costoPedido) throws Exception {
+        
+        // Validaciones
+        if (articulo.getCodArticulo() == null) {
+            throw new Exception("El artículo debe estar guardado antes de crear asociaciones");
+        }
+        
+        if (precioUnitario == null || precioUnitario <= 0) {
+            throw new Exception("El precio unitario debe ser mayor a 0");
+        }
+        
+        if (demoraEntrega == null || demoraEntrega < 0) {
+            throw new Exception("La demora de entrega debe ser mayor o igual a 0");
+        }
+        
+        if (costoPedido == null || costoPedido <= 0) {
+            throw new Exception("El costo de pedido debe ser mayor a 0");
+        }
+        
+        EntityManager em = GenericDAOImpl.emf.createEntityManager();
+        try {
+            em.getTransaction().begin();
+            
+            // Recargar las entidades en el contexto actual
+            Articulo articuloManaged = em.find(Articulo.class, articulo.getCodArticulo());
+            Proveedor proveedorManaged = em.find(Proveedor.class, proveedor.getCodProveedor());
+            
+            if (articuloManaged == null) {
+                throw new Exception("Artículo no encontrado");
+            }
+            if (proveedorManaged == null) {
+                throw new Exception("Proveedor no encontrado");
+            }
+            
+            // Verificar si ya existe la asociación
+            TypedQuery<Long> queryExiste = em.createQuery(
+                "SELECT COUNT(ap) FROM ArticuloProveedor ap " +
+                "WHERE ap.articulo = :articulo AND ap.proveedor = :proveedor AND ap.activo = true",
+                Long.class
+            );
+            queryExiste.setParameter("articulo", articuloManaged);
+            queryExiste.setParameter("proveedor", proveedorManaged);
+            
+            if (queryExiste.getSingleResult() > 0) {
+                throw new Exception("Ya existe una asociación activa entre este artículo y proveedor");
+            }
+            
+            // Crear la asociación
+            ArticuloProveedor ap = new ArticuloProveedor();
+            ap.setArticulo(articuloManaged);
+            ap.setProveedor(proveedorManaged);
+            ap.setPrecioUnitario(precioUnitario);
+            ap.setDemoraEntrega(demoraEntrega);
+            ap.setCostoPedido(costoPedido);
+            ap.setActivo(true);
+            
+            em.persist(ap);
+            em.getTransaction().commit();
+            
+            return ap;
+            
+        } catch (Exception e) {
+            if (em.getTransaction().isActive()) {
+                em.getTransaction().rollback();
+            }
+            throw new Exception("Error al crear la asociación artículo-proveedor: " + e.getMessage());
+        } finally {
+            em.close();
         }
     }
     
@@ -160,8 +236,36 @@ public class ArticuloService {
         return articuloDAO.findByProveedor(proveedor);
     }
     
+    // CORRECCIÓN: Método obtenerPorId que carga todas las relaciones
     public Articulo obtenerPorId(Integer id) {
-        return articuloDAO.findById(id);
+        EntityManager em = GenericDAOImpl.emf.createEntityManager();
+        try {
+            // CAMBIO: Query personalizada para cargar todas las relaciones necesarias
+            TypedQuery<Articulo> query = em.createQuery(
+                "SELECT DISTINCT a FROM Articulo a " +
+                "JOIN FETCH a.modeloInventario " +
+                "LEFT JOIN FETCH a.proveedorPredeterminado " +
+                "LEFT JOIN FETCH a.listaProveedores ap " +
+                "LEFT JOIN FETCH ap.proveedor " +
+                "WHERE a.codArticulo = :id AND a.activo = true",
+                Articulo.class
+            );
+            query.setParameter("id", id);
+            List<Articulo> resultados = query.getResultList();
+            return resultados.isEmpty() ? null : resultados.get(0);
+        } finally {
+            em.close();
+        }
+    }
+    
+    public void recalcularArticulo(Integer codArticulo) throws Exception {
+        Articulo articulo = articuloDAO.findById(codArticulo);
+        if (articulo == null) {
+            throw new Exception("El artículo no existe");
+        }
+        
+        recalcularValoresModelo(articulo);
+        articuloDAO.update(articulo);
     }
     
     private ModeloInventario obtenerOCrearModeloInventario(String nombre) throws Exception {
@@ -210,11 +314,25 @@ public class ArticuloService {
     }
     
     private void recalcularValoresModelo(Articulo articulo) {
-        if (articulo.getModeloInventario().getNombreMetodo().equals(ModeloInventario.LOTE_FIJO)) {
-            articulo.calcularLoteFijo();
-        } else if (articulo.getModeloInventario().getNombreMetodo().equals(ModeloInventario.INTERVALO_FIJO)) {
-            articulo.calcularTiempoFijo();
+        try {
+            if (articulo.getModeloInventario() != null) {
+                String modelo = articulo.getModeloInventario().getNombreMetodo();
+                
+                if (ModeloInventario.LOTE_FIJO.equals(modelo)) {
+                    articulo.calcularLoteFijo();
+                } else if (ModeloInventario.INTERVALO_FIJO.equals(modelo)) {
+                    articulo.calcularTiempoFijo();
+                }
+                
+                // Siempre calcular CGI
+                articulo.calcularCGI();
+            }
+        } catch (Exception e) {
+            System.out.println("Error al recalcular valores del modelo: " + e.getMessage());
+            // Asignar valores por defecto en caso de error
+            articulo.setLoteOptimo(0.0);
+            articulo.setPuntoPedido(articulo.getStockSeguridad() != null ? articulo.getStockSeguridad() : 0.0);
+            articulo.setCgi(0.0);
         }
-        articulo.calcularCGI();
     }
 }
