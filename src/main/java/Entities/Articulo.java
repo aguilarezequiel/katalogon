@@ -64,6 +64,17 @@ public class Articulo {
     @OneToMany(mappedBy = "articulo", fetch = FetchType.EAGER)
     private List<OrdenCompra> ordenesCompra;
     
+    @Column(nullable = true)
+    private LocalDateTime fechaUltimaCompra;
+    
+    public LocalDateTime getFechaUltimaCompra() {
+        return fechaUltimaCompra;
+    }
+
+    public void setFechaUltimaCompra(LocalDateTime fechaUltimaCompra) {
+        this.fechaUltimaCompra = fechaUltimaCompra;
+    }   
+
     // Métodos de negocio
     public void calcularLoteFijo() {
         if (proveedorPredeterminado != null && demanda != null && demanda > 0) {
@@ -183,11 +194,17 @@ public class Articulo {
         
         if (ModeloInventario.LOTE_FIJO.equals(modeloInventario.getNombreMetodo())) {
             return stockActual != null && puntoPedido != null && 
-                   stockActual <= puntoPedido && !tieneOrdenPendienteOEnviada();
+                stockActual <= puntoPedido && !tieneOrdenPendienteOEnviada();
         } else if (ModeloInventario.INTERVALO_FIJO.equals(modeloInventario.getNombreMetodo())) {
-            // Para tiempo fijo, verificar si es momento de revisar inventario
-            // Esto se debe verificar externamente basado en el tiempoIntervalo
-            return false; // Se maneja en el servicio
+            // Para tiempo fijo, verificar si ha pasado el intervalo desde la última compra
+            if (fechaUltimaCompra == null) {
+                return true; // Si nunca se compró, necesita reposición
+            }
+            
+            if (tiempoIntervalo != null && tiempoIntervalo > 0) {
+                LocalDateTime fechaLimite = fechaUltimaCompra.plusDays(tiempoIntervalo);
+                return LocalDateTime.now().isAfter(fechaLimite) || LocalDateTime.now().isEqual(fechaLimite);
+            }
         }
         return false;
     }

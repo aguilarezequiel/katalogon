@@ -10,6 +10,8 @@ import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import java.awt.*;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 public class ReporteProductosReponerFrame extends JInternalFrame {
@@ -122,11 +124,15 @@ public class ReporteProductosReponerFrame extends JInternalFrame {
         JButton btnCerrar = new JButton("Cerrar");
         btnCerrar.addActionListener(e -> dispose());
         
+        JButton btnGenerarAutoTF = new JButton("Generar Auto TF");
+        btnGenerarAutoTF.setToolTipText("Generar órdenes automáticas para Tiempo Fijo");
+        btnGenerarAutoTF.addActionListener(e -> generarOrdenesAutomaticasTiempoFijo());
+
         panelBotones.add(btnGenerarOC);
         panelBotones.add(btnActualizar);
         panelBotones.add(btnExportar);
         panelBotones.add(btnCerrar);
-        
+        panelBotones.add(btnGenerarAutoTF);
         panelInferior.add(panelBotones, BorderLayout.EAST);
         
         add(panelInferior, BorderLayout.SOUTH);
@@ -179,15 +185,31 @@ public class ReporteProductosReponerFrame extends JInternalFrame {
         if (ModeloInventario.LOTE_FIJO.equals(modelo)) {
             // Verificar si alcanzó el punto de pedido y no tiene orden activa
             return articulo.getPuntoPedido() != null && 
-                   articulo.getStockActual() <= articulo.getPuntoPedido() &&
-                   !tieneOrdenActiva(articulo);
+                articulo.getStockActual() <= articulo.getPuntoPedido() &&
+                !tieneOrdenActiva(articulo);
         } else if (ModeloInventario.INTERVALO_FIJO.equals(modelo)) {
-            // Para tiempo fijo, siempre mostrar para que el usuario revise manualmente
-            // En una implementación completa, esto se basaría en fechas
-            return articulo.getTiempoIntervalo() != null && articulo.getTiempoIntervalo() > 0;
+            // **MEJORADO**: Para tiempo fijo, verificar si ha pasado el intervalo
+            return verificarIntervaloTiempoFijo(articulo);
         }
         
         return false;
+    }
+
+    private boolean verificarIntervaloTiempoFijo(Articulo articulo) {
+        if (articulo.getTiempoIntervalo() == null || articulo.getTiempoIntervalo() <= 0) {
+            return false;
+        }
+        
+        // Si nunca se compró, necesita reposición
+        if (articulo.getFechaUltimaCompra() == null) {
+            return true;
+        }
+        
+        // Verificar si ha pasado el intervalo
+        LocalDateTime fechaLimite = articulo.getFechaUltimaCompra().plusDays(articulo.getTiempoIntervalo());
+        LocalDateTime ahora = LocalDateTime.now();
+        
+        return ahora.isAfter(fechaLimite) || ahora.isEqual(fechaLimite);
     }
     
     private boolean tieneOrdenActiva(Articulo articulo) {
@@ -206,11 +228,57 @@ public class ReporteProductosReponerFrame extends JInternalFrame {
             return "Punto Pedido: " + (articulo.getPuntoPedido() != null ? 
                 String.format("%.0f", articulo.getPuntoPedido()) : "0");
         } else if (ModeloInventario.INTERVALO_FIJO.equals(modelo)) {
-            return "Intervalo: " + (articulo.getTiempoIntervalo() != null ? 
+            String intervalo = "Intervalo: " + (articulo.getTiempoIntervalo() != null ? 
                 articulo.getTiempoIntervalo() + " días" : "No definido");
+            
+            if (articulo.getFechaUltimaCompra() != null) {
+                DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+                intervalo += " | Última compra: " + articulo.getFechaUltimaCompra().format(formatter);
+            } else {
+                intervalo += " | Sin compras registradas";
+            }
+            
+            return intervalo;
         }
         
         return "N/A";
+    }
+
+    private void generarOrdenesAutomaticasTiempoFijo() {
+        try {
+            List<Articulo> todosArticulos = articuloService.obtenerTodos();
+            int ordenesGeneradas = 0;
+            
+            for (Articulo a : todosArticulos) {
+                if (ModeloInventario.INTERVALO_FIJO.equals(a.getModeloInventario().getNombreMetodo()) 
+                    && verificarIntervaloTiempoFijo(a) 
+                    && !tieneOrdenActiva(a)
+                    && a.getProveedorPredeterminado() != null) {
+                    
+                    Integer cantidadAPedir = a.calcularCantidadAPedirTiempoFijo();
+                    if (cantidadAPedir > 0) {
+                        OrdenCompra orden = new OrdenCompra();
+                        orden.setArticulo(a);
+                        orden.setProveedor(a.getProveedorPredeterminado());
+                        orden.setCantidad(cantidadAPedir);
+                        
+                        ordenCompraService.crearOrdenCompra(orden);
+                        ordenesGeneradas++;
+                    }
+                }
+            }
+            
+            if (ordenesGeneradas > 0) {
+                JOptionPane.showMessageDialog(this, 
+                    "Se generaron " + ordenesGeneradas + " órdenes de compra automáticamente\n" +
+                    "para artículos con modelo de Intervalo Fijo.");
+                cargarDatos(); // Actualizar la lista
+            }
+            
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, 
+                "Error al generar órdenes automáticas: " + e.getMessage());
+        }
     }
     
     private Integer calcularCantidadAPedir(Articulo articulo) {
@@ -239,7 +307,13 @@ public class ReporteProductosReponerFrame extends JInternalFrame {
         if (ModeloInventario.LOTE_FIJO.equals(modelo)) {
             return "ADVERTENCIA - Alcanzó Punto Pedido";
         } else if (ModeloInventario.INTERVALO_FIJO.equals(modelo)) {
-            return "REVISAR - Tiempo de Intervalo";
+            if (articulo.getFechaUltimaCompra() == null) {
+                return "CRÍTICO - Sin Compras Registradas";
+            } else {
+                long diasTranscurridos = java.time.temporal.ChronoUnit.DAYS.between(
+                    articulo.getFechaUltimaCompra(), LocalDateTime.now());
+                return "REVISAR - Intervalo Cumplido (" + diasTranscurridos + " días)";
+            }
         }
         
         return "REVISAR";

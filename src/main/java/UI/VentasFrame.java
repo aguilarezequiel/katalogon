@@ -365,6 +365,30 @@ public class VentasFrame extends JInternalFrame {
                 actualizarTablaVentas();
                 cargarArticulos(); // Recargar artículos por si cambió el stock
                 
+            } catch (VentaService.AdvertenciaPuntoPedidoException e) {
+                // **NUEVO**: Manejar advertencia de punto de pedido
+                
+                // Primero mostrar que la venta se registró exitosamente
+                JOptionPane.showMessageDialog(this, 
+                    "Venta registrada exitosamente", 
+                    "Venta Completada", 
+                    JOptionPane.INFORMATION_MESSAGE);
+                
+                // Luego mostrar la advertencia
+                int opcion = JOptionPane.showConfirmDialog(this, 
+                    e.getMessage() + "\n\n¿Desea abrir el reporte 'Productos a Reponer' ahora?", 
+                    "Advertencia - Punto de Pedido Alcanzado", 
+                    JOptionPane.YES_NO_OPTION,
+                    JOptionPane.WARNING_MESSAGE);
+                
+                if (opcion == JOptionPane.YES_OPTION) {
+                    abrirReporteProductosReponer();
+                }
+                
+                limpiarVenta();
+                actualizarTablaVentas();
+                cargarArticulos();
+                
             } catch (Exception e) {
                 JOptionPane.showMessageDialog(this, 
                     "Error al registrar venta: " + e.getMessage(), 
@@ -374,6 +398,47 @@ public class VentasFrame extends JInternalFrame {
         }
     }
     
+    private void abrirReporteProductosReponer() {
+        try {
+            // Buscar el JDesktopPane padre
+            Container parent = this.getParent();
+            while (parent != null && !(parent instanceof JDesktopPane)) {
+                parent = parent.getParent();
+            }
+            
+            if (parent instanceof JDesktopPane) {
+                JDesktopPane desktop = (JDesktopPane) parent;
+                
+                // Verificar si ya está abierto
+                for (JInternalFrame frame : desktop.getAllFrames()) {
+                    if (frame instanceof ReporteProductosReponerFrame) {
+                        try {
+                            frame.setSelected(true);
+                            frame.toFront();
+                            return;
+                        } catch (Exception ex) {
+                            // Ignorar
+                        }
+                    }
+                }
+                
+                // Si no está abierto, crear nuevo
+                ReporteProductosReponerFrame reporteFrame = new ReporteProductosReponerFrame();
+                desktop.add(reporteFrame);
+                reporteFrame.setVisible(true);
+                try {
+                    reporteFrame.setSelected(true);
+                } catch (Exception ex) {
+                    // Ignorar
+                }
+            }
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, 
+                "No se pudo abrir el reporte automáticamente. " +
+                "Por favor, ábralo manualmente desde el menú Reportes.");
+        }
+    }
+
     private void limpiarVenta() {
         detalleVenta.clear();
         actualizarTablaDetalle();

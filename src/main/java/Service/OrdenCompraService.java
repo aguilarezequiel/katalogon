@@ -100,6 +100,9 @@ public class OrdenCompraService {
         Articulo articulo = ordenCompra.getArticulo();
         articulo.setStockActual(articulo.getStockActual() + ordenCompra.getCantidad());
         
+        // **NUEVO**: Actualizar fecha de última compra
+        articulo.setFechaUltimaCompra(LocalDateTime.now());
+        
         // Verificar si con la OC la cantidad no supera el Punto de Pedido
         if (articulo.getModeloInventario().getNombreMetodo().equals(ModeloInventario.LOTE_FIJO) 
             && articulo.getStockActual() < articulo.getPuntoPedido()) {

@@ -33,6 +33,9 @@ public class VentaService {
         
         venta.setFechaHoraVenta(LocalDateTime.now());
         
+        // Lista para artículos que alcanzan punto de pedido
+        List<String> articulosEnPuntoPedido = new ArrayList<>();
+        
         // Procesar cada artículo de la venta
         for (VentaArticulo detalle : venta.getDetalleArticulos()) {
             Articulo articulo = detalle.getArticulo();
@@ -43,14 +46,24 @@ public class VentaService {
             }
             
             // Actualizar stock
+            int stockAnterior = articulo.getStockActual();
             articulo.setStockActual(articulo.getStockActual() - detalle.getCantidadVentaArticulo());
             
-            // Verificar si necesita reposición (Modelo Lote Fijo)
+            // **NUEVO**: Verificar si alcanza punto de pedido (Modelo Lote Fijo)
             if (articulo.getModeloInventario().getNombreMetodo().equals(ModeloInventario.LOTE_FIJO)) {
+                
+                // Verificar si ANTES no estaba en punto de pedido y AHORA sí
+                boolean estabaEnPuntoPedido = stockAnterior <= articulo.getPuntoPedido();
+                boolean ahoraEnPuntoPedido = articulo.getStockActual() <= articulo.getPuntoPedido();
+                
+                if (!estabaEnPuntoPedido && ahoraEnPuntoPedido) {
+                    articulosEnPuntoPedido.add(articulo.getDescripcionArticulo());
+                }
+                
+                // Generar orden automática si no tiene orden activa
                 if (articulo.getStockActual() <= articulo.getPuntoPedido() && 
                     !ordenCompraDAO.existeOrdenActivaParaArticulo(articulo)) {
                     
-                    // Generar orden de compra automática
                     generarOrdenCompraAutomatica(articulo);
                 }
             }
@@ -59,9 +72,33 @@ public class VentaService {
             detalle.setVenta(venta);
         }
         
-        return ventaDAO.save(venta);
+        // Guardar la venta
+        Venta ventaGuardada = ventaDAO.save(venta);
+        
+        // **NUEVO**: Mostrar advertencia si hay artículos en punto de pedido
+        if (!articulosEnPuntoPedido.isEmpty()) {
+            StringBuilder mensaje = new StringBuilder();
+            mensaje.append("⚠️ ADVERTENCIA: Los siguientes artículos han alcanzado su Punto de Pedido:\n\n");
+            
+            for (String descripcion : articulosEnPuntoPedido) {
+                mensaje.append("• ").append(descripcion).append("\n");
+            }
+            
+            mensaje.append("\n📋 Se recomienda revisar el reporte 'Productos a Reponer' para gestionar las órdenes de compra.");
+            
+            // Esta excepción especial será capturada en la UI para mostrar la advertencia
+            throw new AdvertenciaPuntoPedidoException(mensaje.toString());
+        }
+        
+        return ventaGuardada;
     }
-    
+
+    public static class AdvertenciaPuntoPedidoException extends Exception {
+        public AdvertenciaPuntoPedidoException(String message) {
+            super(message);
+        }
+    }
+
     private void generarOrdenCompraAutomatica(Articulo articulo) throws Exception {
         OrdenCompra ordenCompra = new OrdenCompra();
         ordenCompra.setArticulo(articulo);

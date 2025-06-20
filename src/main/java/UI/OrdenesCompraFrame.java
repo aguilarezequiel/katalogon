@@ -280,10 +280,41 @@ public class OrdenesCompraFrame extends JInternalFrame {
             txtLoteOptimo.setText(String.format("%.0f", articulo.getLoteOptimo()));
             spnCantidad.setValue(articulo.getLoteOptimo().intValue());
             
+            // **NUEVO**: Filtrar proveedores según el artículo seleccionado
+            cargarProveedoresPorArticulo(articulo);
+            
             // Seleccionar proveedor predeterminado si existe
             if (articulo.getProveedorPredeterminado() != null) {
                 cmbProveedor.setSelectedItem(articulo.getProveedorPredeterminado());
             }
+        } else {
+            // Si no hay artículo, cargar todos los proveedores
+            cargarProveedores();
+        }
+    }
+
+    // Nuevo método para cargar proveedores filtrados por artículo
+    private void cargarProveedoresPorArticulo(Articulo articulo) {
+        try {
+            cmbProveedor.removeAllItems();
+            
+            if (articulo.getListaProveedores() != null) {
+                for (ArticuloProveedor ap : articulo.getListaProveedores()) {
+                    if (ap.getActivo()) {
+                        cmbProveedor.addItem(ap.getProveedor());
+                    }
+                }
+            }
+            
+            // Si no hay proveedores asociados, mostrar mensaje
+            if (cmbProveedor.getItemCount() == 0) {
+                JOptionPane.showMessageDialog(this, 
+                    "El artículo seleccionado no tiene proveedores asociados.\n" +
+                    "Debe asociar proveedores en el maestro de artículos.");
+            }
+            
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Error al cargar proveedores: " + e.getMessage());
         }
     }
     

@@ -303,20 +303,30 @@ public class ProveedoresFrame extends JInternalFrame {
             Proveedor proveedor = proveedorSeleccionado != null ? proveedorSeleccionado : new Proveedor();
             proveedor.setNombreProveedor(txtNombre.getText().trim());
             
-            // Convertir modelo a lista
+            // Convertir modelo a lista - TODAS las asociaciones del modelo
             List<ArticuloProveedor> articulos = new ArrayList<>();
             for (int i = 0; i < modeloArticulosAsociados.size(); i++) {
                 ArticuloProveedor ap = modeloArticulosAsociados.get(i);
+                
+                // IMPORTANTE: Asegurar que el proveedor esté asignado
                 ap.setProveedor(proveedor);
+                
+                // Si el ArticuloProveedor no tiene ID, es nuevo
+                if (ap.getId() == null) {
+                    ap.setActivo(true);
+                }
+                
                 articulos.add(ap);
             }
             proveedor.setArticulosProveedor(articulos);
             
             if (proveedorSeleccionado == null) {
+                // Nuevo proveedor
                 proveedor.setActivo(true);
                 proveedorService.crearProveedor(proveedor);
                 JOptionPane.showMessageDialog(this, "Proveedor creado exitosamente");
             } else {
+                // Actualizar proveedor existente
                 proveedorService.actualizarProveedor(proveedor);
                 JOptionPane.showMessageDialog(this, "Proveedor actualizado exitosamente");
             }
@@ -326,6 +336,7 @@ public class ProveedoresFrame extends JInternalFrame {
             
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "Error al guardar: " + e.getMessage());
+            e.printStackTrace(); // Para debug
         }
     }
     

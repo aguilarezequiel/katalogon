@@ -14,6 +14,9 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.ArrayList;
 
+import java.util.Set;
+import java.util.stream.Collectors;
+
 public class ProveedorService {
     
     private ProveedorDAO proveedorDAO;
@@ -135,10 +138,42 @@ public class ProveedorService {
             Proveedor proveedorManaged = em.find(Proveedor.class, proveedor.getCodProveedor());
             proveedorManaged.setNombreProveedor(proveedor.getNombreProveedor());
             
-            // Si hay nuevas asociaciones, procesarlas
-            if (proveedor.getArticulosProveedor() != null && !proveedor.getArticulosProveedor().isEmpty()) {
+            // **NUEVO**: Manejar asociaciones existentes vs nuevas
+            if (proveedor.getArticulosProveedor() != null) {
+                
+                // 1. Obtener asociaciones actuales en BD
+                TypedQuery<ArticuloProveedor> queryActuales = em.createQuery(
+                    "SELECT ap FROM ArticuloProveedor ap WHERE ap.proveedor = :proveedor AND ap.activo = true",
+                    ArticuloProveedor.class
+                );
+                queryActuales.setParameter("proveedor", proveedorManaged);
+                List<ArticuloProveedor> asociacionesActuales = queryActuales.getResultList();
+                
+                // 2. Crear lista de IDs de artículos en la nueva lista
+                Set<Integer> idsArticulosNuevos = proveedor.getArticulosProveedor().stream()
+                    .map(ap -> ap.getArticulo().getCodArticulo())
+                    .collect(Collectors.toSet());
+                
+                // 3. Desactivar asociaciones que ya no están en la nueva lista
+                for (ArticuloProveedor apActual : asociacionesActuales) {
+                    if (!idsArticulosNuevos.contains(apActual.getArticulo().getCodArticulo())) {
+                        // Esta asociación fue removida, desactivarla
+                        apActual.setActivo(false);
+                        apActual.setFechaHoraBaja(LocalDateTime.now());
+                        em.merge(apActual);
+                    }
+                }
+                
+                // 4. Procesar nuevas asociaciones
                 for (ArticuloProveedor ap : proveedor.getArticulosProveedor()) {
-                    if (ap.getId() == null) { // Nueva asociación
+                    
+                    // Verificar si ya existe la asociación
+                    boolean yaExiste = asociacionesActuales.stream()
+                        .anyMatch(apActual -> apActual.getArticulo().getCodArticulo()
+                            .equals(ap.getArticulo().getCodArticulo()));
+                    
+                    if (!yaExiste) {
+                        // Es una nueva asociación
                         Articulo articulo = em.find(Articulo.class, ap.getArticulo().getCodArticulo());
                         if (articulo != null) {
                             ArticuloProveedor nuevaAsociacion = new ArticuloProveedor();
@@ -150,6 +185,20 @@ public class ProveedorService {
                             nuevaAsociacion.setActivo(true);
                             
                             em.persist(nuevaAsociacion);
+                        }
+                    } else {
+                        // La asociación ya existe, actualizar sus datos
+                        ArticuloProveedor apExistente = asociacionesActuales.stream()
+                            .filter(apActual -> apActual.getArticulo().getCodArticulo()
+                                .equals(ap.getArticulo().getCodArticulo()))
+                            .findFirst()
+                            .orElse(null);
+                        
+                        if (apExistente != null) {
+                            apExistente.setPrecioUnitario(ap.getPrecioUnitario());
+                            apExistente.setDemoraEntrega(ap.getDemoraEntrega());
+                            apExistente.setCostoPedido(ap.getCostoPedido());
+                            em.merge(apExistente);
                         }
                     }
                 }

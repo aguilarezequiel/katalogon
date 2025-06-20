@@ -1,5 +1,6 @@
 UI\ReporteArticulosPorProveedorFrame$2.class
 UI\ReporteArticulosPorProveedorFrame.class
+Service\VentaService$AdvertenciaPuntoPedidoException.class
 DAO\impl\ArticuloDAOImpl.class
 DAO\impl\VentaDAOImpl.class
 DAO\ProveedorDAO.class
