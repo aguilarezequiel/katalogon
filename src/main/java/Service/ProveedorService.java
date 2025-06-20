@@ -9,6 +9,7 @@ import Entities.Proveedor;
 import Entities.Articulo;
 import Entities.ArticuloProveedor;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.TypedQuery;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.ArrayList;
@@ -54,23 +55,42 @@ public class ProveedorService {
             // Establecer valores por defecto
             proveedor.setActivo(true);
             
-            // Guardar el proveedor primero
-            em.persist(proveedor);
+            // CREAR UNA NUEVA INSTANCIA sin las asociaciones para evitar problemas
+            Proveedor nuevoProveedor = new Proveedor();
+            nuevoProveedor.setNombreProveedor(proveedor.getNombreProveedor());
+            nuevoProveedor.setActivo(true);
+            
+            // Guardar el proveedor primero SIN las asociaciones
+            em.persist(nuevoProveedor);
             em.flush(); // Forzar el INSERT para obtener el ID
             
-            // Procesar las asociaciones con artículos
+            // Procesar las asociaciones con artículos DESPUÉS de persistir el proveedor
             List<ArticuloProveedor> asociacionesGuardadas = new ArrayList<>();
             for (ArticuloProveedor ap : proveedor.getArticulosProveedor()) {
-                // Recargar el artículo en el contexto actual
-                Articulo articulo = em.find(Articulo.class, ap.getArticulo().getCodArticulo());
-                if (articulo == null) {
-                    throw new Exception("Artículo no encontrado: " + ap.getArticulo().getDescripcionArticulo());
+                // CRÍTICO: Recargar el artículo en el contexto actual usando su ID
+                Articulo articuloManaged = em.find(Articulo.class, ap.getArticulo().getCodArticulo());
+                if (articuloManaged == null) {
+                    throw new Exception("Artículo no encontrado: " + ap.getArticulo().getCodArticulo());
                 }
                 
-                // Crear nueva asociación
+                // Verificar si ya existe la asociación
+                TypedQuery<Long> queryExiste = em.createQuery(
+                    "SELECT COUNT(ap) FROM ArticuloProveedor ap " +
+                    "WHERE ap.articulo = :articulo AND ap.proveedor = :proveedor AND ap.activo = true",
+                    Long.class
+                );
+                queryExiste.setParameter("articulo", articuloManaged);
+                queryExiste.setParameter("proveedor", nuevoProveedor);
+                
+                if (queryExiste.getSingleResult() > 0) {
+                    throw new Exception("Ya existe una asociación activa entre el artículo " + 
+                        articuloManaged.getDescripcionArticulo() + " y este proveedor");
+                }
+                
+                // Crear nueva asociación con entidades MANAGED
                 ArticuloProveedor nuevaAsociacion = new ArticuloProveedor();
-                nuevaAsociacion.setArticulo(articulo);
-                nuevaAsociacion.setProveedor(proveedor);
+                nuevaAsociacion.setArticulo(articuloManaged);  // Entidad MANAGED
+                nuevaAsociacion.setProveedor(nuevoProveedor);  // Entidad MANAGED
                 nuevaAsociacion.setPrecioUnitario(ap.getPrecioUnitario());
                 nuevaAsociacion.setDemoraEntrega(ap.getDemoraEntrega());
                 nuevaAsociacion.setCostoPedido(ap.getCostoPedido());
@@ -81,10 +101,10 @@ public class ProveedorService {
             }
             
             // Actualizar la lista en el proveedor
-            proveedor.setArticulosProveedor(asociacionesGuardadas);
+            nuevoProveedor.setArticulosProveedor(asociacionesGuardadas);
             
             em.getTransaction().commit();
-            return proveedor;
+            return nuevoProveedor;
             
         } catch (Exception e) {
             if (em.getTransaction().isActive()) {
