@@ -41,16 +41,19 @@ public class ArticuloDAOImpl extends GenericDAOImpl<Articulo> implements Articul
                 "SELECT DISTINCT a FROM Articulo a " +
                 "JOIN FETCH a.modeloInventario " +
                 "LEFT JOIN FETCH a.proveedorPredeterminado " +
-                "LEFT JOIN FETCH a.listaProveedores " +
+                "LEFT JOIN FETCH a.listaProveedores ap " +
+                "LEFT JOIN FETCH ap.proveedor " +
+                "LEFT JOIN FETCH a.ordenesCompra oc " +
+                "LEFT JOIN FETCH oc.estadosHistorico " +
                 "WHERE a.activo = true " +
                 "AND (" +
                     // Modelo Lote Fijo: stock actual <= punto pedido y sin orden activa
                     "(a.modeloInventario.nombreMetodo = 'LOTE_FIJO' " +
                     "AND a.stockActual <= a.puntoPedido " +
                     "AND NOT EXISTS (" +
-                        "SELECT oc FROM OrdenCompra oc " +
-                        "JOIN oc.estadosHistorico oce " +
-                        "WHERE oc.articulo = a " +
+                        "SELECT oc2 FROM OrdenCompra oc2 " +
+                        "JOIN oc2.estadosHistorico oce " +
+                        "WHERE oc2.articulo = a " +
                         "AND oce.estado.nombreEstadoOrdenCompra IN ('PENDIENTE', 'ENVIADA') " +
                         "AND oce.fechaHoraFin IS NULL" +
                     ")) " +

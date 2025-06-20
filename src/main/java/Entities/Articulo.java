@@ -58,10 +58,10 @@ public class Articulo {
     @OneToMany(mappedBy = "articulo", cascade = CascadeType.ALL, fetch = FetchType.EAGER)
     private List<ArticuloProveedor> listaProveedores;
     
-    @OneToMany(mappedBy = "articulo", fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "articulo", fetch = FetchType.EAGER)
     private List<VentaArticulo> ventas;
     
-    @OneToMany(mappedBy = "articulo", fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "articulo", fetch = FetchType.EAGER)
     private List<OrdenCompra> ordenesCompra;
     
     // Métodos de negocio

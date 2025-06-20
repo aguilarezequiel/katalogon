@@ -2,35 +2,29 @@ package UI;
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.ActionEvent;
 
 public class MainFrame extends JFrame {
     
-    private JMenuBar menuBar;
     private JDesktopPane desktopPane;
+    private JMenuBar menuBar;
     
     public MainFrame() {
         initComponents();
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setSize(1200, 800);
         setLocationRelativeTo(null);
+        setTitle("Katalogon - Sistema de Gestión de Inventarios");
     }
     
     private void initComponents() {
-        setTitle("Katalogon - Sistema de Gestión de Inventarios");
-        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(1200, 800);
-        
-        // Crear desktop pane para MDI
+        // Desktop Pane para ventanas internas
         desktopPane = new JDesktopPane();
         desktopPane.setBackground(new Color(240, 240, 240));
         setContentPane(desktopPane);
         
-        // Crear menu bar
+        // Crear menú
         createMenuBar();
-        
-        // Agregar panel de estado
-        JPanel statusPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        statusPanel.setBorder(BorderFactory.createEtchedBorder());
-        statusPanel.add(new JLabel("Sistema listo"));
-        add(statusPanel, BorderLayout.SOUTH);
     }
     
     private void createMenuBar() {
@@ -38,42 +32,31 @@ public class MainFrame extends JFrame {
         
         // Menú Archivo
         JMenu menuArchivo = new JMenu("Archivo");
-        menuArchivo.setMnemonic('A');
-        
         JMenuItem itemSalir = new JMenuItem("Salir");
-        itemSalir.setAccelerator(KeyStroke.getKeyStroke("ctrl Q"));
         itemSalir.addActionListener(e -> System.exit(0));
         menuArchivo.add(itemSalir);
         
         // Menú Maestros
         JMenu menuMaestros = new JMenu("Maestros");
-        menuMaestros.setMnemonic('M');
         
         JMenuItem itemArticulos = new JMenuItem("Artículos");
-        itemArticulos.setAccelerator(KeyStroke.getKeyStroke("ctrl A"));
-        itemArticulos.addActionListener(e -> abrirArticulos());
+        itemArticulos.addActionListener(e -> abrirVentanaArticulos());
         menuMaestros.add(itemArticulos);
         
         JMenuItem itemProveedores = new JMenuItem("Proveedores");
-        itemProveedores.setAccelerator(KeyStroke.getKeyStroke("ctrl P"));
-        itemProveedores.addActionListener(e -> abrirProveedores());
+        itemProveedores.addActionListener(e -> abrirVentanaProveedores());
         menuMaestros.add(itemProveedores);
         
         // Menú Movimientos
         JMenu menuMovimientos = new JMenu("Movimientos");
-        menuMovimientos.setMnemonic('O');
+        
+        JMenuItem itemOrdenCompra = new JMenuItem("Órdenes de Compra");
+        itemOrdenCompra.addActionListener(e -> abrirVentanaOrdenesCompra());
+        menuMovimientos.add(itemOrdenCompra);
         
         JMenuItem itemVentas = new JMenuItem("Ventas");
-        itemVentas.setAccelerator(KeyStroke.getKeyStroke("ctrl V"));
-        itemVentas.addActionListener(e -> abrirVentas());
+        itemVentas.addActionListener(e -> abrirVentanaVentas());
         menuMovimientos.add(itemVentas);
-        
-        JMenuItem itemOrdenesCompra = new JMenuItem("Órdenes de Compra");
-        itemOrdenesCompra.setAccelerator(KeyStroke.getKeyStroke("ctrl O"));
-        itemOrdenesCompra.addActionListener(e -> abrirOrdenesCompra());
-        menuMovimientos.add(itemOrdenesCompra);
-        
-        menuMovimientos.addSeparator();
         
         JMenuItem itemAjusteInventario = new JMenuItem("Ajuste de Inventario");
         itemAjusteInventario.addActionListener(e -> abrirAjusteInventario());
@@ -81,28 +64,15 @@ public class MainFrame extends JFrame {
         
         // Menú Reportes
         JMenu menuReportes = new JMenu("Reportes");
-        menuReportes.setMnemonic('R');
         
         JMenuItem itemProductosReponer = new JMenuItem("Productos a Reponer");
-        itemProductosReponer.addActionListener(e -> abrirReporteProductosReponer());
+        itemProductosReponer.addActionListener(e -> abrirProductosAReponer());
         menuReportes.add(itemProductosReponer);
         
-        JMenuItem itemProductosFaltantes = new JMenuItem("Productos Faltantes");
-        itemProductosFaltantes.addActionListener(e -> abrirReporteProductosFaltantes());
-        menuReportes.add(itemProductosFaltantes);
-        
-        JMenuItem itemProveedoresPorArticulo = new JMenuItem("Proveedores por Artículo");
-        itemProveedoresPorArticulo.addActionListener(e -> abrirReporteProveedoresPorArticulo());
-        menuReportes.add(itemProveedoresPorArticulo);
-        
-        JMenuItem itemArticulosPorProveedor = new JMenuItem("Artículos por Proveedor");
-        itemArticulosPorProveedor.addActionListener(e -> abrirReporteArticulosPorProveedor());
-        menuReportes.add(itemArticulosPorProveedor);
+        // NOTA: NO se incluye "Productos Faltantes" según lo solicitado
         
         // Menú Ayuda
         JMenu menuAyuda = new JMenu("Ayuda");
-        menuAyuda.setMnemonic('y');
-        
         JMenuItem itemAcerca = new JMenuItem("Acerca de...");
         itemAcerca.addActionListener(e -> mostrarAcercaDe());
         menuAyuda.add(itemAcerca);
@@ -117,28 +87,49 @@ public class MainFrame extends JFrame {
         setJMenuBar(menuBar);
     }
     
-    private void abrirArticulos() {
+    private void abrirVentanaArticulos() {
         ArticulosFrame frame = new ArticulosFrame();
         desktopPane.add(frame);
         frame.setVisible(true);
+        try {
+            frame.setSelected(true);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
     
-    private void abrirProveedores() {
+    private void abrirVentanaProveedores() {
         ProveedoresFrame frame = new ProveedoresFrame();
         desktopPane.add(frame);
         frame.setVisible(true);
+        try {
+            frame.setSelected(true);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
     
-    private void abrirVentas() {
-        VentasFrame frame = new VentasFrame();
-        desktopPane.add(frame);
-        frame.setVisible(true);
-    }
-    
-    private void abrirOrdenesCompra() {
+    private void abrirVentanaOrdenesCompra() {
+        // CORRECCIÓN: El nombre correcto de la clase es OrdenesCompraFrame
         OrdenesCompraFrame frame = new OrdenesCompraFrame();
         desktopPane.add(frame);
         frame.setVisible(true);
+        try {
+            frame.setSelected(true);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+    
+    private void abrirVentanaVentas() {
+        VentasFrame frame = new VentasFrame();
+        desktopPane.add(frame);
+        frame.setVisible(true);
+        try {
+            frame.setSelected(true);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
     
     private void abrirAjusteInventario() {
@@ -146,36 +137,25 @@ public class MainFrame extends JFrame {
         dialog.setVisible(true);
     }
     
-    private void abrirReporteProductosReponer() {
+    private void abrirProductosAReponer() {
+        // CORRECCIÓN: El nombre correcto es ReporteProductosReponerFrame
         ReporteProductosReponerFrame frame = new ReporteProductosReponerFrame();
         desktopPane.add(frame);
         frame.setVisible(true);
-    }
-    
-    private void abrirReporteProductosFaltantes() {
-        ReporteProductosFaltantesFrame frame = new ReporteProductosFaltantesFrame();
-        desktopPane.add(frame);
-        frame.setVisible(true);
-    }
-    
-    private void abrirReporteProveedoresPorArticulo() {
-        ReporteProveedoresPorArticuloFrame frame = new ReporteProveedoresPorArticuloFrame();
-        desktopPane.add(frame);
-        frame.setVisible(true);
-    }
-    
-    private void abrirReporteArticulosPorProveedor() {
-        ReporteArticulosPorProveedorFrame frame = new ReporteArticulosPorProveedorFrame();
-        desktopPane.add(frame);
-        frame.setVisible(true);
+        try {
+            frame.setSelected(true);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
     
     private void mostrarAcercaDe() {
         JOptionPane.showMessageDialog(this, 
             "Katalogon - Sistema de Gestión de Inventarios\n" +
             "Versión 1.0\n\n" +
-            "Desarrollado para Investigación Operativa 2025",
-            "Acerca de", 
+            "Desarrollado para Investigación Operativa\n" +
+            "Universidad Tecnológica Nacional",
+            "Acerca de Katalogon",
             JOptionPane.INFORMATION_MESSAGE);
     }
 }

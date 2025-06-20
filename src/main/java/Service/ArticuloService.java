@@ -112,8 +112,12 @@ public class ArticuloService {
             Double precioUnitario, Integer demoraEntrega, Double costoPedido) throws Exception {
         
         // Validaciones
-        if (articulo.getCodArticulo() == null) {
+        if (articulo == null || articulo.getCodArticulo() == null) {
             throw new Exception("El artículo debe estar guardado antes de crear asociaciones");
+        }
+        
+        if (proveedor == null || proveedor.getCodProveedor() == null) {
+            throw new Exception("El proveedor debe estar guardado antes de crear asociaciones");
         }
         
         if (precioUnitario == null || precioUnitario <= 0) {
@@ -167,6 +171,9 @@ public class ArticuloService {
             
             em.persist(ap);
             em.getTransaction().commit();
+            
+            // Recargar el artículo para actualizar su lista de proveedores
+            em.refresh(articuloManaged);
             
             return ap;
             
@@ -240,7 +247,7 @@ public class ArticuloService {
     public Articulo obtenerPorId(Integer id) {
         EntityManager em = GenericDAOImpl.emf.createEntityManager();
         try {
-            // CAMBIO: Query personalizada para cargar todas las relaciones necesarias
+            // Query simplificada sin múltiples colecciones
             TypedQuery<Articulo> query = em.createQuery(
                 "SELECT DISTINCT a FROM Articulo a " +
                 "JOIN FETCH a.modeloInventario " +
