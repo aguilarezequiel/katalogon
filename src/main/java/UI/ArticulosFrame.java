@@ -22,7 +22,11 @@ public class ArticulosFrame extends JInternalFrame {
     private JSpinner spnStockSeguridad;
     private JSpinner spnDemanda;
     private JSpinner spnCostoAlmacenamiento;
-    private JSpinner spnTiempoIntervalo;
+    
+    // MODIFICADO: Cambio de días a minutos
+    private JSpinner spnTiempoIntervaloMinutos;
+    private JComboBox<String> cmbUnidadTiempo; // Para seleccionar minutos, horas o días
+    
     private JComboBox<Proveedor> cmbProveedorPredeterminado;
     private JComboBox<String> cmbModeloInventario;
     
@@ -162,12 +166,25 @@ public class ArticulosFrame extends JInternalFrame {
         txtPuntoPedido.setBackground(Color.LIGHT_GRAY);
         panelLoteFijo.add(txtPuntoPedido);
         
-        // Panel para modelo Tiempo Fijo
+        // MODIFICADO: Panel para modelo Tiempo Fijo con selector de unidades
         JPanel panelTiempoFijo = new JPanel(new FlowLayout(FlowLayout.LEFT));
         
-        panelTiempoFijo.add(new JLabel("Intervalo de Tiempo (días):"));
-        spnTiempoIntervalo = new JSpinner(new SpinnerNumberModel(30, 1, 365, 1));
-        panelTiempoFijo.add(spnTiempoIntervalo);
+        panelTiempoFijo.add(new JLabel("Intervalo de Tiempo:"));
+        spnTiempoIntervaloMinutos = new JSpinner(new SpinnerNumberModel(30, 1, 999999, 1));
+        spnTiempoIntervaloMinutos.setPreferredSize(new Dimension(80, 25));
+        panelTiempoFijo.add(spnTiempoIntervaloMinutos);
+        
+        // Selector de unidad de tiempo
+        cmbUnidadTiempo = new JComboBox<>(new String[]{"Minutos", "Horas", "Días"});
+        cmbUnidadTiempo.setSelectedItem("Días"); // Por defecto días para compatibilidad
+        cmbUnidadTiempo.addActionListener(e -> actualizarUnidadTiempo());
+        panelTiempoFijo.add(cmbUnidadTiempo);
+        
+        // Etiqueta para mostrar equivalencia
+        JLabel lblEquivalencia = new JLabel();
+        lblEquivalencia.setName("lblEquivalencia");
+        lblEquivalencia.setForeground(Color.GRAY);
+        panelTiempoFijo.add(lblEquivalencia);
         
         panel.add(panelLoteFijo, "LOTE_FIJO");
         panel.add(panelTiempoFijo, "INTERVALO_FIJO");
@@ -175,9 +192,83 @@ public class ArticulosFrame extends JInternalFrame {
         return panel;
     }
     
+    private void actualizarUnidadTiempo() {
+        // Actualizar la etiqueta de equivalencia
+        int valor = (Integer) spnTiempoIntervaloMinutos.getValue();
+        String unidad = (String) cmbUnidadTiempo.getSelectedItem();
+        
+        JLabel lblEquivalencia = findLabelByName(panelModeloEspecifico, "lblEquivalencia");
+        if (lblEquivalencia != null) {
+            String equivalencia = calcularEquivalencia(valor, unidad);
+            lblEquivalencia.setText(equivalencia);
+        }
+    }
+    
+    private String calcularEquivalencia(int valor, String unidad) {
+        int totalMinutos = convertirAMinutos(valor, unidad);
+        
+        StringBuilder sb = new StringBuilder("(= ");
+        
+        if (totalMinutos < 60) {
+            sb.append(totalMinutos).append(" min");
+        } else if (totalMinutos < 1440) {
+            int horas = totalMinutos / 60;
+            int minutos = totalMinutos % 60;
+            sb.append(horas).append("h");
+            if (minutos > 0) sb.append(" ").append(minutos).append("m");
+        } else {
+            int dias = totalMinutos / 1440;
+            int horasRestantes = (totalMinutos % 1440) / 60;
+            sb.append(dias).append(" días");
+            if (horasRestantes > 0) sb.append(" ").append(horasRestantes).append("h");
+        }
+        
+        sb.append(")");
+        return sb.toString();
+    }
+    
+    private int convertirAMinutos(int valor, String unidad) {
+        switch (unidad) {
+            case "Minutos": return valor;
+            case "Horas": return valor * 60;
+            case "Días": return valor * 24 * 60;
+            default: return valor;
+        }
+    }
+    
+    private void convertirDesdeMinutos(int totalMinutos) {
+        if (totalMinutos < 60) {
+            spnTiempoIntervaloMinutos.setValue(totalMinutos);
+            cmbUnidadTiempo.setSelectedItem("Minutos");
+        } else if (totalMinutos < 1440) {
+            spnTiempoIntervaloMinutos.setValue(totalMinutos / 60);
+            cmbUnidadTiempo.setSelectedItem("Horas");
+        } else {
+            spnTiempoIntervaloMinutos.setValue(totalMinutos / (24 * 60));
+            cmbUnidadTiempo.setSelectedItem("Días");
+        }
+    }
+    
+    private JLabel findLabelByName(Container container, String name) {
+        for (Component component : container.getComponents()) {
+            if (component instanceof JLabel && name.equals(component.getName())) {
+                return (JLabel) component;
+            } else if (component instanceof Container) {
+                JLabel found = findLabelByName((Container) component, name);
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+    
     private void cambiarModeloInventario() {
         String modelo = (String) cmbModeloInventario.getSelectedItem();
         cardLayout.show(panelModeloEspecifico, modelo);
+        
+        // Si es tiempo fijo, actualizar la equivalencia
+        if ("INTERVALO_FIJO".equals(modelo)) {
+            actualizarUnidadTiempo();
+        }
     }
     
     private JPanel createTablePanel() {
@@ -317,8 +408,14 @@ public class ArticulosFrame extends JInternalFrame {
                     txtPuntoPedido.setText(articuloSeleccionado.getPuntoPedido() != null ? 
                         String.format("%.2f", articuloSeleccionado.getPuntoPedido()) : "0.00");
                 } else if ("INTERVALO_FIJO".equals(modelo)) {
-                    spnTiempoIntervalo.setValue(articuloSeleccionado.getTiempoIntervalo() != null ? 
-                        articuloSeleccionado.getTiempoIntervalo() : 30);
+                    // MODIFICADO: Cargar intervalo en minutos y convertir a unidad apropiada
+                    if (articuloSeleccionado.getTiempoIntervaloMinutos() != null) {
+                        convertirDesdeMinutos(articuloSeleccionado.getTiempoIntervaloMinutos());
+                    } else {
+                        spnTiempoIntervaloMinutos.setValue(30);
+                        cmbUnidadTiempo.setSelectedItem("Días");
+                    }
+                    actualizarUnidadTiempo();
                 }
                 
                 txtCGI.setText(articuloSeleccionado.getCgi() != null ? 
@@ -336,7 +433,8 @@ public class ArticulosFrame extends JInternalFrame {
         spnStockSeguridad.setValue(0.0);
         spnDemanda.setValue(0.0);
         spnCostoAlmacenamiento.setValue(0.0);
-        spnTiempoIntervalo.setValue(30);
+        spnTiempoIntervaloMinutos.setValue(30);
+        cmbUnidadTiempo.setSelectedItem("Días");
         cmbModeloInventario.setSelectedIndex(0);
         cmbProveedorPredeterminado.setSelectedIndex(0);
         txtLoteOptimo.setText("");
@@ -369,9 +467,12 @@ public class ArticulosFrame extends JInternalFrame {
             modelo.setNombreMetodo((String) cmbModeloInventario.getSelectedItem());
             articulo.setModeloInventario(modelo);
             
-            // Asignar campos específicos del modelo
+            // MODIFICADO: Asignar campos específicos del modelo
             if ("INTERVALO_FIJO".equals(modelo.getNombreMetodo())) {
-                articulo.setTiempoIntervalo((Integer) spnTiempoIntervalo.getValue());
+                int valor = (Integer) spnTiempoIntervaloMinutos.getValue();
+                String unidad = (String) cmbUnidadTiempo.getSelectedItem();
+                int totalMinutos = convertirAMinutos(valor, unidad);
+                articulo.setTiempoIntervaloMinutos(totalMinutos);
             }
             
             if (articuloSeleccionado == null) {
@@ -551,7 +652,10 @@ public class ArticulosFrame extends JInternalFrame {
             
             String modelo = (String) cmbModeloInventario.getSelectedItem();
             if ("INTERVALO_FIJO".equals(modelo)) {
-                articuloSeleccionado.setTiempoIntervalo((Integer) spnTiempoIntervalo.getValue());
+                int valor = (Integer) spnTiempoIntervaloMinutos.getValue();
+                String unidad = (String) cmbUnidadTiempo.getSelectedItem();
+                int totalMinutos = convertirAMinutos(valor, unidad);
+                articuloSeleccionado.setTiempoIntervaloMinutos(totalMinutos);
             }
             
             // Llamar al servicio para recalcular

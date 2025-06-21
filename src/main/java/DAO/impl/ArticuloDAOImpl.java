@@ -36,7 +36,6 @@ public class ArticuloDAOImpl extends GenericDAOImpl<Articulo> implements Articul
     public List<Articulo> findArticulosAReponer() {
         EntityManager em = getEntityManager();
         try {
-            // Query mejorada para incluir tanto modelo lote fijo como tiempo fijo
             TypedQuery<Articulo> query = em.createQuery(
                 "SELECT DISTINCT a FROM Articulo a " +
                 "JOIN FETCH a.modeloInventario " +
@@ -45,9 +44,11 @@ public class ArticuloDAOImpl extends GenericDAOImpl<Articulo> implements Articul
                 "LEFT JOIN FETCH ap.proveedor " +
                 "WHERE a.activo = true " +
                 "AND (" +
-                    // Modelo Lote Fijo: stock actual <= punto pedido y sin orden activa
+                    // Modelo Lote Fijo: stock actual <= punto pedido, tiene lote óptimo y sin orden activa
                     "(a.modeloInventario.nombreMetodo = 'LOTE_FIJO' " +
                     "AND a.stockActual <= a.puntoPedido " +
+                    "AND a.loteOptimo IS NOT NULL " +
+                    "AND a.loteOptimo > 0 " +
                     "AND NOT EXISTS (" +
                         "SELECT oc2 FROM OrdenCompra oc2 " +
                         "JOIN oc2.estadosHistorico oce " +
@@ -56,10 +57,18 @@ public class ArticuloDAOImpl extends GenericDAOImpl<Articulo> implements Articul
                         "AND oce.fechaHoraFin IS NULL" +
                     ")) " +
                     "OR " +
-                    // Modelo Tiempo Fijo: artículos que tienen intervalo definido Y sin orden activa
+                    // Modelo Tiempo Fijo: artículos que tienen intervalo válido y pueden calcular cantidad
                     "(a.modeloInventario.nombreMetodo = 'INTERVALO_FIJO' " +
-                    "AND a.tiempoIntervalo IS NOT NULL " +
-                    "AND a.tiempoIntervalo > 0 " +
+                    "AND a.tiempoIntervaloMinutos IS NOT NULL " +
+                    "AND a.tiempoIntervaloMinutos > 0 " +
+                    "AND a.proveedorPredeterminado IS NOT NULL " + // Necesario para calcular cantidad
+                    "AND (" +
+                        // Si nunca se compró, necesita reposición
+                        "a.fechaUltimaCompra IS NULL " +
+                        "OR " +
+                        // Si ha pasado el intervalo
+                        "FUNCTION('TIMESTAMPDIFF', MINUTE, a.fechaUltimaCompra, CURRENT_TIMESTAMP) >= a.tiempoIntervaloMinutos" +
+                    ") " +
                     "AND NOT EXISTS (" +
                         "SELECT oc3 FROM OrdenCompra oc3 " +
                         "JOIN oc3.estadosHistorico oce2 " +

@@ -69,6 +69,11 @@ public class MainFrame extends JFrame {
         itemProductosReponer.addActionListener(e -> abrirProductosAReponer());
         menuReportes.add(itemProductosReponer);
         
+        // NUEVO: Agregar reporte de productos faltantes
+        JMenuItem itemProductosFaltantes = new JMenuItem("Productos Faltantes");
+        itemProductosFaltantes.addActionListener(e -> abrirProductosFaltantes());
+        menuReportes.add(itemProductosFaltantes);
+        
         // Separador
         menuReportes.addSeparator();
         
@@ -141,7 +146,6 @@ public class MainFrame extends JFrame {
     }
     
     private void abrirVentanaOrdenesCompra() {
-        // CORRECCIÓN: El nombre correcto de la clase es OrdenesCompraFrame
         OrdenesCompraFrame frame = new OrdenesCompraFrame();
         desktopPane.add(frame);
         frame.setVisible(true);
@@ -169,8 +173,19 @@ public class MainFrame extends JFrame {
     }
     
     private void abrirProductosAReponer() {
-        // CORRECCIÓN: El nombre correcto es ReporteProductosReponerFrame
         ReporteProductosReponerFrame frame = new ReporteProductosReponerFrame();
+        desktopPane.add(frame);
+        frame.setVisible(true);
+        try {
+            frame.setSelected(true);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+    
+    // NUEVO: Método para abrir el reporte de productos faltantes
+    private void abrirProductosFaltantes() {
+        ReporteProductosFaltantesFrame frame = new ReporteProductosFaltantesFrame();
         desktopPane.add(frame);
         frame.setVisible(true);
         try {
@@ -185,7 +200,15 @@ public class MainFrame extends JFrame {
             "Katalogon - Sistema de Gestión de Inventarios\n" +
             "Versión 1.0\n\n" +
             "Desarrollado para Investigación Operativa\n" +
-            "Universidad Tecnológica Nacional",
+            "Universidad Tecnológica Nacional\n\n" +
+            "Modelos de Inventario implementados:\n" +
+            "• Lote Fijo (EOQ)\n" +
+            "• Intervalo Fijo\n\n" +
+            "Reportes disponibles:\n" +
+            "• Productos a Reponer\n" +
+            "• Productos Faltantes (Stock de Seguridad)\n" +
+            "• Proveedores por Artículo\n" +
+            "• Artículos por Proveedor",
             "Acerca de Katalogon",
             JOptionPane.INFORMATION_MESSAGE);
     }

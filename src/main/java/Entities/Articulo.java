@@ -6,6 +6,7 @@ import lombok.NoArgsConstructor;
 import lombok.AllArgsConstructor;
 import java.time.LocalDateTime;
 import java.util.List;
+import javax.swing.JOptionPane;
 
 @Entity
 @Table(name = "articulos")
@@ -41,7 +42,10 @@ public class Articulo {
     // Campos calculados para modelos de inventario
     private Double loteOptimo;
     private Double puntoPedido;
-    private Integer tiempoIntervalo; // Para modelo de tiempo fijo (en días)
+    
+    // CORREGIDO: Mapeo correcto para la columna tiempo_intervalo_minutos
+    @Column(name = "tiempoIntervaloMinutos")
+    private Integer tiempoIntervaloMinutos; // Para modelo de tiempo fijo (en minutos)
     
     // CGI (Costo de Gestión de Inventario) - calculado
     private Double cgi;
@@ -75,6 +79,23 @@ public class Articulo {
         this.fechaUltimaCompra = fechaUltimaCompra;
     }   
 
+    // MÉTODOS AUXILIARES PARA COMPATIBILIDAD
+    /**
+     * @deprecated Usar getTiempoIntervaloMinutos() en su lugar
+     */
+    @Deprecated
+    public Integer getTiempoIntervalo() {
+        return tiempoIntervaloMinutos != null ? tiempoIntervaloMinutos / (24 * 60) : null;
+    }
+    
+    /**
+     * @deprecated Usar setTiempoIntervaloMinutos() en su lugar
+     */
+    @Deprecated
+    public void setTiempoIntervalo(Integer dias) {
+        this.tiempoIntervaloMinutos = dias != null ? dias * 24 * 60 : null;
+    }
+
     // Métodos de negocio
     public void calcularLoteFijo() {
         if (proveedorPredeterminado != null && demanda != null && demanda > 0) {
@@ -102,27 +123,87 @@ public class Articulo {
         // Para modelo de tiempo fijo, el intervalo se define manualmente
         // El stock de seguridad sigue siendo definido por el usuario
         // No calculamos inventario máximo automáticamente
-        if (tiempoIntervalo == null || tiempoIntervalo <= 0) {
-            this.tiempoIntervalo = 30; // Valor por defecto
+        if (tiempoIntervaloMinutos == null || tiempoIntervaloMinutos <= 0) {
+            this.tiempoIntervaloMinutos = 30 * 24 * 60; // 30 días por defecto en minutos
         }
     }
     
     public Integer calcularCantidadAPedirTiempoFijo() {
-        if (modeloInventario != null && ModeloInventario.INTERVALO_FIJO.equals(modeloInventario.getNombreMetodo())) {
-            if (demanda != null && tiempoIntervalo != null) {
-                ArticuloProveedor apPred = obtenerDatosProveedorPredeterminado();
-                if (apPred != null) {
-                    // Demanda durante el período + demanda durante tiempo de entrega + stock seguridad - stock actual
-                    double demandaPeriodo = (demanda / 365) * tiempoIntervalo;
-                    double demandaEntrega = (demanda / 365) * apPred.getDemoraEntrega();
-                    double cantidadNecesaria = demandaPeriodo + demandaEntrega + stockSeguridad - stockActual;
-                    return Math.max(0, (int) Math.ceil(cantidadNecesaria));
-                }
-            }
+        if (!ModeloInventario.INTERVALO_FIJO.equals(modeloInventario.getNombreMetodo())) {
+            System.out.println("DEBUG: Artículo no es INTERVALO_FIJO: " + modeloInventario.getNombreMetodo());
+            return 0;
         }
-        return 0;
+        
+        if (demanda == null || demanda <= 0) {
+            System.out.println("DEBUG calcularCantidadAPedirTiempoFijo - Demanda inválida: " + demanda);
+            return 0;
+        }
+        
+        if (tiempoIntervaloMinutos == null || tiempoIntervaloMinutos <= 0) {
+            System.out.println("DEBUG calcularCantidadAPedirTiempoFijo - Intervalo inválido: " + tiempoIntervaloMinutos);
+            return 0;
+        }
+        
+        if (proveedorPredeterminado == null) {
+            System.out.println("DEBUG calcularCantidadAPedirTiempoFijo - Sin proveedor predeterminado");
+            return 0;
+        }
+        
+        ArticuloProveedor apPred = obtenerDatosProveedorPredeterminado();
+        if (apPred == null) {
+            System.out.println("DEBUG: No se encontraron datos del proveedor predeterminado");
+            return 0;
+        }
+        
+        try {
+            // Convertir minutos a días para los cálculos
+            double intervaloDias = tiempoIntervaloMinutos / (24.0 * 60.0);
+            
+            // **FÓRMULA CORREGIDA PARA TIEMPO FIJO**:
+            // Cantidad = Demanda durante el período + Demanda durante tiempo de entrega + Stock seguridad - Stock actual
+            
+            double demandaDiaria = demanda / 365.0;
+            double demandaPeriodo = demandaDiaria * intervaloDias;
+            double demandaEntrega = demandaDiaria * apPred.getDemoraEntrega();
+            double stockSeguridad = this.stockSeguridad != null ? this.stockSeguridad : 0.0;
+            
+            // **CORRECCIÓN CRÍTICA**: La cantidad necesaria debe considerar el inventario objetivo
+            // Inventario objetivo = Demanda durante (intervalo + tiempo entrega) + Stock seguridad
+            double inventarioObjetivo = demandaPeriodo + demandaEntrega + stockSeguridad;
+            double cantidadNecesaria = inventarioObjetivo - stockActual;
+            
+            // **VALIDACIÓN**: Si el resultado es negativo o muy pequeño, aplicar una cantidad mínima
+            int resultado;
+            if (cantidadNecesaria <= 0) {
+                // Si tenemos suficiente stock, pero ha pasado el intervalo, podríamos pedir una cantidad mínima
+                // O usar solo la demanda del período
+                resultado = Math.max(1, (int) Math.ceil(demandaPeriodo));
+            } else {
+                resultado = (int) Math.ceil(cantidadNecesaria);
+            }
+            
+            System.out.println("DEBUG calcularCantidadAPedirTiempoFijo - " + descripcionArticulo + ":");
+            System.out.println("  - Demanda anual: " + demanda);
+            System.out.println("  - Demanda diaria: " + String.format("%.2f", demandaDiaria));
+            System.out.println("  - Intervalo días: " + String.format("%.2f", intervaloDias));
+            System.out.println("  - Demanda período: " + String.format("%.2f", demandaPeriodo));
+            System.out.println("  - Demanda entrega: " + String.format("%.2f", demandaEntrega));
+            System.out.println("  - Stock seguridad: " + stockSeguridad);
+            System.out.println("  - Stock actual: " + stockActual);
+            System.out.println("  - Inventario objetivo: " + String.format("%.2f", inventarioObjetivo));
+            System.out.println("  - Cantidad necesaria: " + String.format("%.2f", cantidadNecesaria));
+            System.out.println("  - Resultado final: " + resultado);
+            
+            return resultado;
+            
+        } catch (Exception e) {
+            System.out.println("Error en calcularCantidadAPedirTiempoFijo: " + e.getMessage());
+            e.printStackTrace();
+            return 0;
+        }
     }
-    
+   
+
     public void calcularCGI() {
         try {
             if (demanda != null && demanda > 0) {
@@ -165,8 +246,11 @@ public class Articulo {
         // Para tiempo fijo, calcular CGI basado en el intervalo
         ArticuloProveedor apPred = obtenerDatosProveedorPredeterminado();
         if (apPred != null && apPred.getPrecioUnitario() != null && costoAlmacenamiento != null) {
+            // MODIFICADO: Convertir minutos a días para el cálculo
+            double intervaloDias = tiempoIntervaloMinutos != null ? tiempoIntervaloMinutos / (24.0 * 60.0) : 30;
+            
             // CGI simplificado para tiempo fijo
-            double costoPedidoAnual = apPred.getCostoPedido() * (365.0 / (tiempoIntervalo != null ? tiempoIntervalo : 30));
+            double costoPedidoAnual = apPred.getCostoPedido() * (365.0 / intervaloDias);
             double costoMantenimiento = stockSeguridad * costoAlmacenamiento;
             double costoAdquisicion = demanda * apPred.getPrecioUnitario();
             this.cgi = costoPedidoAnual + costoMantenimiento + costoAdquisicion;
@@ -188,23 +272,35 @@ public class Articulo {
         }
         return null;
     }
-    
+
     public boolean necesitaReposicion() {
         if (modeloInventario == null) return false;
         
         if (ModeloInventario.LOTE_FIJO.equals(modeloInventario.getNombreMetodo())) {
             return stockActual != null && puntoPedido != null && 
                 stockActual <= puntoPedido && !tieneOrdenPendienteOEnviada();
+                
         } else if (ModeloInventario.INTERVALO_FIJO.equals(modeloInventario.getNombreMetodo())) {
-            // Para tiempo fijo, verificar si ha pasado el intervalo desde la última compra
-            if (fechaUltimaCompra == null) {
-                return true; // Si nunca se compró, necesita reposición
+            
+            // Verificar configuración básica
+            if (tiempoIntervaloMinutos == null || tiempoIntervaloMinutos <= 0) {
+                return false;
             }
             
-            if (tiempoIntervalo != null && tiempoIntervalo > 0) {
-                LocalDateTime fechaLimite = fechaUltimaCompra.plusDays(tiempoIntervalo);
-                return LocalDateTime.now().isAfter(fechaLimite) || LocalDateTime.now().isEqual(fechaLimite);
+            // Si nunca se compró, necesita reposición
+            if (fechaUltimaCompra == null) {
+                return !tieneOrdenPendienteOEnviada();
             }
+            
+            // Verificar si ha pasado el intervalo
+            LocalDateTime ahora = LocalDateTime.now();
+            long minutosTranscurridos = java.time.temporal.ChronoUnit.MINUTES.between(
+                fechaUltimaCompra, ahora);
+                
+            boolean hasPasadoIntervalo = minutosTranscurridos >= tiempoIntervaloMinutos;
+            boolean sinOrdenActiva = !tieneOrdenPendienteOEnviada();
+            
+            return hasPasadoIntervalo && sinOrdenActiva;
         }
         return false;
     }
@@ -221,6 +317,23 @@ public class Articulo {
             .anyMatch(oc -> oc.getEstadoActual() != null && 
                 (oc.getEstadoActual().getEstado().getNombreEstadoOrdenCompra().equals("PENDIENTE") ||
                  oc.getEstadoActual().getEstado().getNombreEstadoOrdenCompra().equals("ENVIADA")));
+    }
+    
+    // MÉTODOS AUXILIARES PARA FORMATEO DE TIEMPO
+    public String formatearTiempoIntervalo() {
+        if (tiempoIntervaloMinutos == null) return "No definido";
+        
+        if (tiempoIntervaloMinutos < 60) {
+            return tiempoIntervaloMinutos + " minutos";
+        } else if (tiempoIntervaloMinutos < 1440) { // menos de 1 día
+            int horas = tiempoIntervaloMinutos / 60;
+            int minutos = tiempoIntervaloMinutos % 60;
+            return horas + "h " + (minutos > 0 ? minutos + "m" : "");
+        } else {
+            int dias = tiempoIntervaloMinutos / 1440;
+            int horasRestantes = (tiempoIntervaloMinutos % 1440) / 60;
+            return dias + " días" + (horasRestantes > 0 ? " " + horasRestantes + "h" : "");
+        }
     }
     
     @Override

@@ -50,6 +50,13 @@ public class ArticuloService {
             throw new Exception("Debe seleccionar un modelo de inventario");
         }
         
+        // MODIFICADO: Validación específica para intervalos en minutos
+        if (ModeloInventario.INTERVALO_FIJO.equals(articulo.getModeloInventario().getNombreMetodo())) {
+            if (articulo.getTiempoIntervaloMinutos() == null || articulo.getTiempoIntervaloMinutos() <= 0) {
+                throw new Exception("Para modelo de Tiempo Fijo, debe especificar un intervalo válido en minutos");
+            }
+        }
+        
         // Obtener o crear el modelo de inventario en la base de datos
         ModeloInventario modeloPersistente = obtenerOCrearModeloInventario(
             articulo.getModeloInventario().getNombreMetodo()
@@ -71,6 +78,14 @@ public class ArticuloService {
         Articulo existente = articuloDAO.findById(articulo.getCodArticulo());
         if (existente == null) {
             throw new Exception("El artículo no existe");
+        }
+        
+        // MODIFICADO: Validación específica para intervalos en minutos
+        if (articulo.getModeloInventario() != null && 
+            ModeloInventario.INTERVALO_FIJO.equals(articulo.getModeloInventario().getNombreMetodo())) {
+            if (articulo.getTiempoIntervaloMinutos() == null || articulo.getTiempoIntervaloMinutos() <= 0) {
+                throw new Exception("Para modelo de Tiempo Fijo, debe especificar un intervalo válido en minutos");
+            }
         }
         
         // Asegurar que el modelo de inventario esté persistido
@@ -329,6 +344,14 @@ public class ArticuloService {
                     articulo.calcularLoteFijo();
                 } else if (ModeloInventario.INTERVALO_FIJO.equals(modelo)) {
                     articulo.calcularTiempoFijo();
+                    
+                    // MODIFICADO: Validar que el intervalo esté configurado
+                    if (articulo.getTiempoIntervaloMinutos() == null || articulo.getTiempoIntervaloMinutos() <= 0) {
+                        // Establecer un valor por defecto de 30 días en minutos
+                        articulo.setTiempoIntervaloMinutos(30 * 24 * 60);
+                        System.out.println("Advertencia: Se estableció intervalo por defecto de 30 días para artículo: " 
+                            + articulo.getDescripcionArticulo());
+                    }
                 }
                 
                 // Siempre calcular CGI
@@ -340,6 +363,13 @@ public class ArticuloService {
             articulo.setLoteOptimo(0.0);
             articulo.setPuntoPedido(articulo.getStockSeguridad() != null ? articulo.getStockSeguridad() : 0.0);
             articulo.setCgi(0.0);
+            
+            // Para modelo de tiempo fijo, asegurar que tenga un intervalo
+            if (articulo.getModeloInventario() != null && 
+                ModeloInventario.INTERVALO_FIJO.equals(articulo.getModeloInventario().getNombreMetodo()) &&
+                (articulo.getTiempoIntervaloMinutos() == null || articulo.getTiempoIntervaloMinutos() <= 0)) {
+                articulo.setTiempoIntervaloMinutos(30 * 24 * 60); // 30 días por defecto
+            }
         }
     }
 }

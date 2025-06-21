@@ -27,6 +27,9 @@ public class OrdenesCompraFrame extends JInternalFrame {
     private JTextField txtEstado;
     private JTextField txtLoteOptimo;
     
+    // NUEVO: Campo para mostrar información del modelo de tiempo fijo
+    private JTextArea txtInfoModelo;
+    
     private OrdenCompra ordenSeleccionada;
     
     public OrdenesCompraFrame() {
@@ -39,7 +42,7 @@ public class OrdenesCompraFrame extends JInternalFrame {
     }
     
     private void initComponents() {
-        setSize(900, 600);
+        setSize(900, 700); // Aumentado para más información
         setLayout(new BorderLayout());
         
         // Panel superior - Formulario
@@ -127,6 +130,21 @@ public class OrdenesCompraFrame extends JInternalFrame {
         gbc.gridx = 1;
         spnCantidad = new JSpinner(new SpinnerNumberModel(1, 1, 99999, 1));
         panel.add(spnCantidad, gbc);
+        
+        // NUEVO: Fila 4 - Información del modelo de inventario
+        gbc.gridx = 0; gbc.gridy = 3;
+        panel.add(new JLabel("Info Modelo:"), gbc);
+        
+        gbc.gridx = 1; gbc.gridwidth = 4;
+        gbc.fill = GridBagConstraints.BOTH;
+        txtInfoModelo = new JTextArea(2, 30);
+        txtInfoModelo.setEditable(false);
+        txtInfoModelo.setBackground(Color.LIGHT_GRAY);
+        txtInfoModelo.setFont(new Font("SansSerif", Font.PLAIN, 11));
+        txtInfoModelo.setBorder(BorderFactory.createLoweredBevelBorder());
+        JScrollPane scrollInfo = new JScrollPane(txtInfoModelo);
+        scrollInfo.setPreferredSize(new Dimension(400, 50));
+        panel.add(scrollInfo, gbc);
         
         return panel;
     }
@@ -273,24 +291,72 @@ public class OrdenesCompraFrame extends JInternalFrame {
         }
     }
     
+    // MODIFICADO: Incluir información del modelo de tiempo fijo
     private void actualizarDatosArticulo() {
         Articulo articulo = (Articulo) cmbArticulo.getSelectedItem();
         if (articulo == null) {
             // Si no hay artículo, limpiar todo
             txtLoteOptimo.setText("");
+            txtInfoModelo.setText("");
             spnCantidad.setValue(1);
             cargarProveedores(); // Cargar todos los proveedores
             return;
         }
 
-        // Mostrar lote óptimo
-        if (articulo.getLoteOptimo() != null) {
-            txtLoteOptimo.setText(String.format("%.0f", articulo.getLoteOptimo()));
-            spnCantidad.setValue(articulo.getLoteOptimo().intValue());
-        } else {
-            txtLoteOptimo.setText("0");
-            spnCantidad.setValue(1);
+        // Construir información del modelo
+        StringBuilder infoModelo = new StringBuilder();
+        String modelo = articulo.getModeloInventario().getNombreMetodo();
+        infoModelo.append("Modelo: ").append(modelo);
+        
+        if ("LOTE_FIJO".equals(modelo)) {
+            // Mostrar lote óptimo
+            if (articulo.getLoteOptimo() != null) {
+                txtLoteOptimo.setText(String.format("%.0f", articulo.getLoteOptimo()));
+                spnCantidad.setValue(articulo.getLoteOptimo().intValue());
+                infoModelo.append(" | Punto Pedido: ").append(String.format("%.0f", 
+                    articulo.getPuntoPedido() != null ? articulo.getPuntoPedido() : 0.0));
+            } else {
+                txtLoteOptimo.setText("0");
+                spnCantidad.setValue(1);
+                infoModelo.append(" | Sin configurar");
+            }
+        } else if ("INTERVALO_FIJO".equals(modelo)) {
+            // MODIFICADO: Mostrar información del tiempo fijo en minutos
+            txtLoteOptimo.setText("N/A"); // No aplica para tiempo fijo
+            
+            if (articulo.getTiempoIntervaloMinutos() != null) {
+                String tiempoFormateado = formatearTiempo(articulo.getTiempoIntervaloMinutos());
+                infoModelo.append(" | Intervalo: ").append(tiempoFormateado);
+                
+                // Calcular cantidad sugerida para tiempo fijo
+                Integer cantidadSugerida = articulo.calcularCantidadAPedirTiempoFijo();
+                if (cantidadSugerida > 0) {
+                    spnCantidad.setValue(cantidadSugerida);
+                    infoModelo.append(" | Cantidad calculada: ").append(cantidadSugerida);
+                } else {
+                    spnCantidad.setValue(1);
+                    infoModelo.append(" | Sin calcular");
+                }
+                
+                // Mostrar información de última compra
+                if (articulo.getFechaUltimaCompra() != null) {
+                    DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+                    infoModelo.append("\nÚltima compra: ").append(articulo.getFechaUltimaCompra().format(formatter));
+                    
+                    // Calcular tiempo transcurrido
+                    long minutosTranscurridos = java.time.temporal.ChronoUnit.MINUTES.between(
+                        articulo.getFechaUltimaCompra(), java.time.LocalDateTime.now());
+                    infoModelo.append(" | Transcurrido: ").append(formatearTiempo((int) minutosTranscurridos));
+                } else {
+                    infoModelo.append("\nSin compras registradas");
+                }
+            } else {
+                spnCantidad.setValue(1);
+                infoModelo.append(" | Intervalo no configurado");
+            }
         }
+        
+        txtInfoModelo.setText(infoModelo.toString());
 
         // CRÍTICO: Filtrar proveedores según el artículo seleccionado
         cargarProveedoresPorArticulo(articulo);
@@ -306,6 +372,21 @@ public class OrdenesCompraFrame extends JInternalFrame {
                     break;
                 }
             }
+        }
+    }
+    
+    // NUEVO: Método para formatear tiempo en unidades comprensibles
+    private String formatearTiempo(int minutos) {
+        if (minutos < 60) {
+            return minutos + " min";
+        } else if (minutos < 1440) { // menos de 1 día
+            int horas = minutos / 60;
+            int minutosRestantes = minutos % 60;
+            return horas + "h" + (minutosRestantes > 0 ? " " + minutosRestantes + "m" : "");
+        } else {
+            int dias = minutos / 1440;
+            int horasRestantes = (minutos % 1440) / 60;
+            return dias + " días" + (horasRestantes > 0 ? " " + horasRestantes + "h" : "");
         }
     }
 
@@ -393,6 +474,7 @@ public class OrdenesCompraFrame extends JInternalFrame {
         // Limpiar estado visual
         txtEstado.setText("NUEVA");
         txtLoteOptimo.setText("");
+        txtInfoModelo.setText("");
 
         // Habilitar controles para edición
         cmbArticulo.setEnabled(true);
