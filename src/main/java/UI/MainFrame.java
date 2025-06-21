@@ -69,7 +69,16 @@ public class MainFrame extends JFrame {
         itemProductosReponer.addActionListener(e -> abrirProductosAReponer());
         menuReportes.add(itemProductosReponer);
         
-        // NOTA: NO se incluye "Productos Faltantes" según lo solicitado
+        // Separador
+        menuReportes.addSeparator();
+        
+        JMenuItem itemProveedoresPorArticulo = new JMenuItem("Proveedores por Artículo");
+        itemProveedoresPorArticulo.addActionListener(e -> abrirProveedoresPorArticulo());
+        menuReportes.add(itemProveedoresPorArticulo);
+        
+        JMenuItem itemArticulosPorProveedor = new JMenuItem("Artículos por Proveedor");
+        itemArticulosPorProveedor.addActionListener(e -> abrirArticulosPorProveedor());
+        menuReportes.add(itemArticulosPorProveedor);
         
         // Menú Ayuda
         JMenu menuAyuda = new JMenu("Ayuda");
@@ -85,6 +94,28 @@ public class MainFrame extends JFrame {
         menuBar.add(menuAyuda);
         
         setJMenuBar(menuBar);
+    }
+    
+    private void abrirProveedoresPorArticulo() {
+        ReporteProveedoresPorArticuloFrame frame = new ReporteProveedoresPorArticuloFrame();
+        desktopPane.add(frame);
+        frame.setVisible(true);
+        try {
+            frame.setSelected(true);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+    
+    private void abrirArticulosPorProveedor() {
+        ReporteArticulosPorProveedorFrame frame = new ReporteArticulosPorProveedorFrame();
+        desktopPane.add(frame);
+        frame.setVisible(true);
+        try {
+            frame.setSelected(true);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
     
     private void abrirVentanaArticulos() {

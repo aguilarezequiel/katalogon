@@ -180,15 +180,19 @@ public class ReporteProductosReponerFrame extends JInternalFrame {
     private boolean debeReponer(Articulo articulo) {
         if (articulo.getModeloInventario() == null) return false;
         
+        // PRIMERO verificar si tiene órdenes activas (tanto para Lote Fijo como Tiempo Fijo)
+        if (tieneOrdenActiva(articulo)) {
+            return false; // No debe aparecer en el reporte si ya tiene orden activa
+        }
+        
         String modelo = articulo.getModeloInventario().getNombreMetodo();
         
         if (ModeloInventario.LOTE_FIJO.equals(modelo)) {
-            // Verificar si alcanzó el punto de pedido y no tiene orden activa
+            // Para Lote Fijo: verificar si alcanzó el punto de pedido
             return articulo.getPuntoPedido() != null && 
-                articulo.getStockActual() <= articulo.getPuntoPedido() &&
-                !tieneOrdenActiva(articulo);
+                   articulo.getStockActual() <= articulo.getPuntoPedido();
         } else if (ModeloInventario.INTERVALO_FIJO.equals(modelo)) {
-            // **MEJORADO**: Para tiempo fijo, verificar si ha pasado el intervalo
+            // Para Tiempo Fijo: verificar si ha pasado el intervalo
             return verificarIntervaloTiempoFijo(articulo);
         }
         

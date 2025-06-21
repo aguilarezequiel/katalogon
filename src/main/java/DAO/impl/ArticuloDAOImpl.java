@@ -43,8 +43,6 @@ public class ArticuloDAOImpl extends GenericDAOImpl<Articulo> implements Articul
                 "LEFT JOIN FETCH a.proveedorPredeterminado " +
                 "LEFT JOIN FETCH a.listaProveedores ap " +
                 "LEFT JOIN FETCH ap.proveedor " +
-                "LEFT JOIN FETCH a.ordenesCompra oc " +
-                "LEFT JOIN FETCH oc.estadosHistorico " +
                 "WHERE a.activo = true " +
                 "AND (" +
                     // Modelo Lote Fijo: stock actual <= punto pedido y sin orden activa
@@ -58,10 +56,17 @@ public class ArticuloDAOImpl extends GenericDAOImpl<Articulo> implements Articul
                         "AND oce.fechaHoraFin IS NULL" +
                     ")) " +
                     "OR " +
-                    // Modelo Tiempo Fijo: artículos que tienen intervalo definido
+                    // Modelo Tiempo Fijo: artículos que tienen intervalo definido Y sin orden activa
                     "(a.modeloInventario.nombreMetodo = 'INTERVALO_FIJO' " +
                     "AND a.tiempoIntervalo IS NOT NULL " +
-                    "AND a.tiempoIntervalo > 0)" +
+                    "AND a.tiempoIntervalo > 0 " +
+                    "AND NOT EXISTS (" +
+                        "SELECT oc3 FROM OrdenCompra oc3 " +
+                        "JOIN oc3.estadosHistorico oce2 " +
+                        "WHERE oc3.articulo = a " +
+                        "AND oce2.estado.nombreEstadoOrdenCompra IN ('PENDIENTE', 'ENVIADA') " +
+                        "AND oce2.fechaHoraFin IS NULL" +
+                    "))" +
                 ")",
                 Articulo.class
             );

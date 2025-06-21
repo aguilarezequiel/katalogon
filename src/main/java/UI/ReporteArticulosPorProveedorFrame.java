@@ -143,6 +143,8 @@ public class ReporteArticulosPorProveedorFrame extends JInternalFrame {
         }
     }
     
+
+
     private void cargarArticulos() {
         Proveedor proveedor = (Proveedor) cmbProveedor.getSelectedItem();
         if (proveedor == null) {
@@ -154,42 +156,37 @@ public class ReporteArticulosPorProveedorFrame extends JInternalFrame {
             int totalArticulos = 0;
             int articulosPredeterminados = 0;
             
-            // Cargar artículos del proveedor
-            List<Articulo> articulos = proveedorService.obtenerArticulosPorProveedor(proveedor);
+            // CORRECCIÓN: Cargar el proveedor completo con sus asociaciones
+            Proveedor proveedorCompleto = proveedorService.obtenerPorId(proveedor.getCodProveedor());
             
-            for (Articulo articulo : articulos) {
-                // Buscar datos específicos del proveedor
-                ArticuloProveedor apData = null;
-                if (articulo.getListaProveedores() != null) {
-                    for (ArticuloProveedor ap : articulo.getListaProveedores()) {
-                        if (ap.getProveedor().getCodProveedor().equals(proveedor.getCodProveedor()) 
-                            && ap.getActivo()) {
-                            apData = ap;
-                            break;
+            if (proveedorCompleto != null && proveedorCompleto.getArticulosProveedor() != null) {
+                for (ArticuloProveedor ap : proveedorCompleto.getArticulosProveedor()) {
+                    if (ap.getActivo() && ap.getArticulo() != null) {
+                        // Recargar el artículo completo para asegurar que las asociaciones estén disponibles
+                        Articulo articuloCompleto = articuloService.obtenerPorId(ap.getArticulo().getCodArticulo());
+                        
+                        if (articuloCompleto != null) {
+                            boolean esPredeterminado = articuloCompleto.getProveedorPredeterminado() != null &&
+                                articuloCompleto.getProveedorPredeterminado().getCodProveedor()
+                                    .equals(proveedor.getCodProveedor());
+                            
+                            if (esPredeterminado) {
+                                articulosPredeterminados++;
+                            }
+                            
+                            Object[] fila = {
+                                articuloCompleto.getCodArticulo(),
+                                articuloCompleto.getDescripcionArticulo(),
+                                articuloCompleto.getStockActual(),
+                                String.format("$ %.2f", ap.getPrecioUnitario()),
+                                ap.getDemoraEntrega() + " días",
+                                String.format("$ %.2f", ap.getCostoPedido()),
+                                esPredeterminado ? "SÍ" : "NO"
+                            };
+                            modeloTabla.addRow(fila);
+                            totalArticulos++;
                         }
                     }
-                }
-                
-                if (apData != null) {
-                    boolean esPredeterminado = articulo.getProveedorPredeterminado() != null &&
-                        articulo.getProveedorPredeterminado().getCodProveedor()
-                            .equals(proveedor.getCodProveedor());
-                    
-                    if (esPredeterminado) {
-                        articulosPredeterminados++;
-                    }
-                    
-                    Object[] fila = {
-                        articulo.getCodArticulo(),
-                        articulo.getDescripcionArticulo(),
-                        articulo.getStockActual(),
-                        String.format("$ %.2f", apData.getPrecioUnitario()),
-                        apData.getDemoraEntrega() + " días",
-                        String.format("$ %.2f", apData.getCostoPedido()),
-                        esPredeterminado ? "SÍ" : "NO"
-                    };
-                    modeloTabla.addRow(fila);
-                    totalArticulos++;
                 }
             }
             
@@ -203,6 +200,7 @@ public class ReporteArticulosPorProveedorFrame extends JInternalFrame {
             
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "Error al cargar artículos: " + e.getMessage());
+            e.printStackTrace(); // Para debug
         }
     }
     

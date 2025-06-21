@@ -275,46 +275,81 @@ public class OrdenesCompraFrame extends JInternalFrame {
     
     private void actualizarDatosArticulo() {
         Articulo articulo = (Articulo) cmbArticulo.getSelectedItem();
-        if (articulo != null) {
-            // Mostrar lote óptimo
+        if (articulo == null) {
+            // Si no hay artículo, limpiar todo
+            txtLoteOptimo.setText("");
+            spnCantidad.setValue(1);
+            cargarProveedores(); // Cargar todos los proveedores
+            return;
+        }
+
+        // Mostrar lote óptimo
+        if (articulo.getLoteOptimo() != null) {
             txtLoteOptimo.setText(String.format("%.0f", articulo.getLoteOptimo()));
             spnCantidad.setValue(articulo.getLoteOptimo().intValue());
-            
-            // **NUEVO**: Filtrar proveedores según el artículo seleccionado
-            cargarProveedoresPorArticulo(articulo);
-            
-            // Seleccionar proveedor predeterminado si existe
-            if (articulo.getProveedorPredeterminado() != null) {
-                cmbProveedor.setSelectedItem(articulo.getProveedorPredeterminado());
-            }
         } else {
-            // Si no hay artículo, cargar todos los proveedores
-            cargarProveedores();
+            txtLoteOptimo.setText("0");
+            spnCantidad.setValue(1);
+        }
+
+        // CRÍTICO: Filtrar proveedores según el artículo seleccionado
+        cargarProveedoresPorArticulo(articulo);
+
+        // Solo auto-seleccionar proveedor predeterminado si no estamos cargando una orden existente
+        if (ordenSeleccionada == null && articulo.getProveedorPredeterminado() != null) {
+            // Buscar el proveedor predeterminado en el combo filtrado
+            for (int i = 0; i < cmbProveedor.getItemCount(); i++) {
+                Proveedor proveedorCombo = cmbProveedor.getItemAt(i);
+                if (proveedorCombo != null && 
+                    proveedorCombo.getCodProveedor().equals(articulo.getProveedorPredeterminado().getCodProveedor())) {
+                    cmbProveedor.setSelectedIndex(i);
+                    break;
+                }
+            }
         }
     }
 
     // Nuevo método para cargar proveedores filtrados por artículo
     private void cargarProveedoresPorArticulo(Articulo articulo) {
         try {
+            // Guardar la selección actual antes de limpiar
+            Proveedor proveedorActualmenteSeleccionado = (Proveedor) cmbProveedor.getSelectedItem();
+
             cmbProveedor.removeAllItems();
-            
-            if (articulo.getListaProveedores() != null) {
+
+            if (articulo.getListaProveedores() != null && !articulo.getListaProveedores().isEmpty()) {
+                boolean proveedorAnteriorEncontrado = false;
+
                 for (ArticuloProveedor ap : articulo.getListaProveedores()) {
-                    if (ap.getActivo()) {
+                    if (ap.getActivo() && ap.getProveedor() != null) {
                         cmbProveedor.addItem(ap.getProveedor());
+
+                        // Verificar si el proveedor anteriormente seleccionado está en la nueva lista
+                        if (proveedorActualmenteSeleccionado != null && 
+                            ap.getProveedor().getCodProveedor().equals(proveedorActualmenteSeleccionado.getCodProveedor())) {
+                            proveedorAnteriorEncontrado = true;
+                        }
                     }
                 }
+
+                // Si el proveedor anterior sigue siendo válido, reseleccionarlo
+                if (proveedorAnteriorEncontrado && proveedorActualmenteSeleccionado != null) {
+                    cmbProveedor.setSelectedItem(proveedorActualmenteSeleccionado);
+                }
             }
-            
+
             // Si no hay proveedores asociados, mostrar mensaje
             if (cmbProveedor.getItemCount() == 0) {
                 JOptionPane.showMessageDialog(this, 
                     "El artículo seleccionado no tiene proveedores asociados.\n" +
-                    "Debe asociar proveedores en el maestro de artículos.");
+                    "Debe asociar proveedores en el maestro de artículos.",
+                    "Sin Proveedores",
+                    JOptionPane.WARNING_MESSAGE);
             }
-            
+
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "Error al cargar proveedores: " + e.getMessage());
+            e.printStackTrace();
         }
     }
     
@@ -323,36 +358,60 @@ public class OrdenesCompraFrame extends JInternalFrame {
         if (filaSeleccionada >= 0) {
             Integer id = (Integer) modeloTabla.getValueAt(filaSeleccionada, 0);
             ordenSeleccionada = ordenCompraService.obtenerPorId(id);
-            
+
             if (ordenSeleccionada != null) {
+                // PASO 1: Cargar artículo PRIMERO
                 cmbArticulo.setSelectedItem(ordenSeleccionada.getArticulo());
-                cmbProveedor.setSelectedItem(ordenSeleccionada.getProveedor());
-                spnCantidad.setValue(ordenSeleccionada.getCantidad());
-                
-                String estado = ordenSeleccionada.getEstadoActual() != null ? 
-                    ordenSeleccionada.getEstadoActual().getEstado().getNombreEstadoOrdenCompra() : "N/A";
-                txtEstado.setText(estado);
-                
-                // Deshabilitar edición si no está en estado PENDIENTE
-                boolean editable = estado.equals("PENDIENTE");
-                cmbArticulo.setEnabled(editable);
-                cmbProveedor.setEnabled(editable);
-                spnCantidad.setEnabled(editable);
+
+                // PASO 2: Esto automáticamente filtra los proveedores a través del listener
+                // de actualizarDatosArticulo(), así que esperamos un poco para que se complete
+                SwingUtilities.invokeLater(() -> {
+                    // PASO 3: Ahora seleccionar el proveedor específico de la orden
+                    cmbProveedor.setSelectedItem(ordenSeleccionada.getProveedor());
+
+                    // PASO 4: Cargar otros datos
+                    spnCantidad.setValue(ordenSeleccionada.getCantidad());
+
+                    String estado = ordenSeleccionada.getEstadoActual() != null ? 
+                        ordenSeleccionada.getEstadoActual().getEstado().getNombreEstadoOrdenCompra() : "N/A";
+                    txtEstado.setText(estado);
+
+                    // PASO 5: Deshabilitar edición si no está en estado PENDIENTE
+                    boolean editable = estado.equals("PENDIENTE");
+                    cmbArticulo.setEnabled(editable);
+                    cmbProveedor.setEnabled(editable);
+                    spnCantidad.setEnabled(editable);
+                });
             }
         }
     }
     
     private void nuevaOrden() {
+        // IMPORTANTE: Limpiar la referencia a orden seleccionada PRIMERO
         ordenSeleccionada = null;
+
+        // Limpiar estado visual
         txtEstado.setText("NUEVA");
+        txtLoteOptimo.setText("");
+
+        // Habilitar controles para edición
         cmbArticulo.setEnabled(true);
         cmbProveedor.setEnabled(true);
         spnCantidad.setEnabled(true);
+
+        // Limpiar selección de tabla
         tablaOrdenes.clearSelection();
-        
+
+        // Resetear valores
+        spnCantidad.setValue(1);
+
+        // Cargar datos iniciales
         if (cmbArticulo.getItemCount() > 0) {
             cmbArticulo.setSelectedIndex(0);
-            actualizarDatosArticulo();
+            // actualizarDatosArticulo() se ejecutará automáticamente por el listener
+        } else {
+            // Si no hay artículos, cargar todos los proveedores
+            cargarProveedores();
         }
     }
     
